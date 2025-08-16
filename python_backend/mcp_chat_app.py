@@ -263,14 +263,6 @@ class MCPChatApp:
 
         logger.info("Generating Gemini tool declarations.")
         declarations = []
-        type_mapping = {
-            'string': 'STRING',
-            'number': 'NUMBER',
-            'integer': 'INTEGER',
-            'boolean': 'BOOLEAN',
-            'array': 'ARRAY',
-            'object': 'OBJECT',
-        }
 
         for mcp_tool in self.mcp_tools:
             try:
@@ -289,47 +281,14 @@ class MCPChatApp:
                         f"MCP tool '{mcp_tool.name}' has non-OBJECT inputSchema ('{mcp_schema_dict.get('type')}'). Skipping for Gemini.")
                     continue
 
-                gemini_properties = {}
-                required_props = mcp_schema_dict.get('required', [])
-                valid_properties_found = False
+                # Convert the entire parameter schema using the recursive helper
+                gemini_params_schema = self._mcp_schema_to_gemini_schema(mcp_schema_dict, mcp_tool.name, "")
 
-                for prop_name, prop_schema_dict in mcp_schema_dict.get('properties', {}).items():
-                    if not isinstance(prop_schema_dict, dict):
-                        logger.warning(
-                            f"Property '{prop_name}' in tool '{mcp_tool.name}' has non-dict schema. Skipping property.")
+                if gemini_params_schema:
+                    # Ensure the top-level schema passed to FunctionDeclaration is indeed an OBJECT type
+                    if gemini_params_schema.type != genai_types.Type.OBJECT:
+                        logger.error(f"Root schema for tool '{mcp_tool.name}' was not converted to OBJECT type by helper. Actual type: {gemini_params_schema.type}. Skipping.")
                         continue
-
-                    mcp_type = prop_schema_dict.get('type', '').lower()
-                    gemini_type_str = type_mapping.get(mcp_type)
-
-                    # *** FIX START ***
-                    # If MCP type is 'object' but has no defined sub-properties, treat as STRING for Gemini
-                    if mcp_type == 'object' and not prop_schema_dict.get('properties'):
-                        logger.warning(f"Property '{prop_name}' in tool '{mcp_tool.name}' is MCP type 'object' with no sub-properties. Mapping to Gemini STRING type.")
-                        gemini_type_str = 'STRING' # Override to STRING
-                    # *** FIX END ***
-
-                    if gemini_type_str:
-                        # For OBJECT types mapped to STRING, adjust description
-                        description = prop_schema_dict.get('description', '')
-                        if gemini_type_str == 'STRING' and mcp_type == 'object':
-                            description += " (Provide as JSON string)"
-
-                        gemini_properties[prop_name] = genai_types.Schema(
-                            type=gemini_type_str,
-                            description=description.strip() or None # Ensure None if empty
-                        )
-                        valid_properties_found = True
-                    else:
-                        logger.warning(
-                            f"Property '{prop_name}' in tool '{mcp_tool.name}' has unmappable MCP type '{mcp_type}'. Skipping property.")
-
-                if valid_properties_found or not mcp_schema_dict.get('properties'):
-                    gemini_params_schema = genai_types.Schema(
-                        type='OBJECT',
-                        properties=gemini_properties if gemini_properties else None,
-                        required=required_props if required_props and gemini_properties else None
-                    )
 
                     declaration = genai_types.FunctionDeclaration(
                         name=mcp_tool.name,
@@ -555,6 +514,85 @@ class MCPChatApp:
             if self.chat_history and self.chat_history[-1].role == "user":
                 self.chat_history.pop()
             return f"An unexpected error occurred: {e}"
+
+
+    def _mcp_schema_to_gemini_schema(self, mcp_schema_dict: Dict[str, Any], tool_name: str, property_path: str) -> Optional[genai_types.Schema]:
+        """
+        Recursively converts an MCP-style JSON schema dictionary to a Gemini types.Schema object.
+        """
+
+        type_mapping = {
+            'string': genai_types.Type.STRING,
+            'number': genai_types.Type.NUMBER,
+            'integer': genai_types.Type.INTEGER,
+            'boolean': genai_types.Type.BOOLEAN,
+            'array': genai_types.Type.ARRAY,
+            'object': genai_types.Type.OBJECT,
+        }
+
+        if not isinstance(mcp_schema_dict, dict):
+            logger.warning(f"{tool_name}.{property_path} is not a dict ({type(mcp_schema_dict)}). Skipping.")
+            return None
+        
+        mcp_type_lower = mcp_schema_dict.get('type', '').lower()
+        gemini_enum_type = type_mapping.get(mcp_type_lower)
+        if not gemini_enum_type:
+            logger.warning(f"{tool_name}.{property_path} has unmappable MCP type '{mcp_type_lower}'. Skipping.")
+            return None
+        
+        args_for_gemini_schema: Dict[str, Any] = {
+            "type_": gemini_enum_type,
+            "description": mcp_schema_dict.get('description', '').strip() or None,
+        }
+        
+        if 'title' in mcp_schema_dict:
+            args_for_gemini_schema['title'] = mcp_schema_dict['title']
+        
+        if gemini_enum_type == genai_types.Type.OBJECT:
+            gemini_props_map = {}
+            mcp_properties = mcp_schema_dict.get('properties', {})
+            if isinstance(mcp_properties, dict):
+                for prop_name, sub_mcp_schema_dict in mcp_properties.items():
+                    sub_gemini_schema = self._mcp_schema_to_gemini_schema(
+                        sub_mcp_schema_dict,
+                        tool_name,
+                        f"{property_path}.properties.{prop_name}"
+                    )
+                    if sub_gemini_schema:
+                        gemini_props_map[prop_name] = sub_gemini_schema
+            
+                args_for_gemini_schema['properties'] = gemini_props_map
+            elif mcp_properties :
+                logger.warning(f"{tool_name}.{property_path} had properties defined, but not as an object.")
+            mcp_required_list = mcp_schema_dict.get('required', [])
+            if isinstance(mcp_required_list, list) and gemini_props_map:
+                valid_required_list = [req_prop for req_prop in mcp_required_list if req_prop in gemini_props_map]
+                if valid_required_list:
+                    args_for_gemini_schema['required'] = valid_required_list
+        elif gemini_enum_type == genai_types.Type.ARRAY:
+            mcp_items_schema_dict = mcp_schema_dict.get('items')
+            if isinstance(mcp_items_schema_dict, dict):
+                gemini_items_schema = self._mcp_schema_to_gemini_schema(
+                    mcp_items_schema_dict,
+                    tool_name,
+                    f"{property_path}.items"
+                )
+                if gemini_items_schema:
+                    args_for_gemini_schema['items'] = gemini_items_schema
+                else:
+                    logger.warning(f"{tool_name}.{property_path}: failed to convert 'items' schema for ARRAY.")
+            else:
+                logger.warning(f"{tool_name}.{property_path}: 'items' field for ARRAY is missing or not a dict.")
+        
+        if gemini_enum_type == genai_types.Type.STRING and 'enum' in mcp_schema_dict and isinstance(mcp_schema_dict['enum'], list):
+            args_for_gemini_schema['enum'] = mcp_schema_dict['enum']
+        try:
+            # Use type_ instead of type due to Python keyword conflict
+            return genai_types.Schema(**{k if k != 'type_' else 'type': v for k, v in args_for_gemini_schema.items()})
+        except Exception as e:
+            logger.error(f"{tool_name}.{property_path}: Error creating genai_types.Schema with processed args {args_for_gemini_schema}: {e}", exc_info=True)
+            return None
+
 
     async def cleanup(self):
         logger.info("Cleaning up MCPChatApp resources...")
