@@ -47,6 +47,15 @@ function App() {
     }
   };
 
+  const handleSettingsClick = () => {
+    // Open settings dialog via Electron IPC
+    if (window.electronAPI && window.electronAPI.openSettingsDialog) {
+      window.electronAPI.openSettingsDialog();
+    } else {
+      console.warn('Settings dialog not available in this environment');
+    }
+  };
+
   return (
     <div className="app-container">
       {/* Header */}
@@ -59,7 +68,7 @@ function App() {
           <span className="app-subtitle">D&D 5e AI Assistant</span>
         </div>
         <div className="header-right">
-          <button className="header-btn" title="Settings">
+          <button className="header-btn" title="Settings" onClick={handleSettingsClick}>
             ⚙️
           </button>
         </div>
