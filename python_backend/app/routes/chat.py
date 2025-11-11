@@ -8,6 +8,9 @@ from typing import Dict, Any, List
 import logging
 import asyncio
 
+# Import Tool type for type hints
+from app.llm import Tool
+
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('chat', __name__, url_prefix='/api/chat')
@@ -121,8 +124,6 @@ def chat():
 
 def _get_available_tools() -> List[Tool]:
     """Get all available tools from MCP servers"""
-    from app.llm import Tool
-    
     tools = []
     
     try:

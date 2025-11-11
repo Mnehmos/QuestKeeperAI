@@ -1,5 +1,5 @@
 # QuestKeeperAI Backend Dependencies
-# Python 3.9+
+# Python 3.9+ (including Python 3.13)
 
 # Core Framework
 Flask==3.0.0
@@ -7,8 +7,8 @@ Flask-CORS==4.0.0
 python-dotenv==1.0.1
 
 # Database
-SQLAlchemy==2.0.23
-alembic==1.13.1
+SQLAlchemy>=2.0.25        # 2.0.25+ required for Python 3.13 support
+alembic>=1.13.1
 
 # LLM Providers
 anthropic>=0.21.0       # Claude
@@ -25,6 +25,9 @@ mcp>=1.5.0
 # Utilities
 pydantic>=2.6.0
 pydantic-settings>=2.1.0
+
+# Packaging
+pyinstaller>=6.3.0
 
 # Development (optional)
 pytest>=7.4.0
