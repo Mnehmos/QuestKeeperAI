@@ -9,7 +9,11 @@
     "build": "webpack --mode production",
     "build:watch": "webpack --mode development --watch",
     "watch": "electron . --inspect",
-    "dist": "electron-builder"
+    "package": "npm run build && electron-builder",
+    "package:mac": "npm run build && electron-builder --mac",
+    "package:win": "npm run build && electron-builder --win",
+    "package:linux": "npm run build && electron-builder --linux",
+    "dist": "npm run build && electron-builder"
   },
   "keywords": [
     "Electron",
@@ -34,19 +38,44 @@
     "webpack-cli": "^5.1.4"
   },
   "build": {
-    "appId": "com.yourcompany.gemcpchat",
-    "productName": "GemCP Chat",
+    "appId": "com.questkeeper.ai",
+    "productName": "QuestKeeperAI",
+    "copyright": "Copyright © 2025",
+    "directories": {
+      "output": "release"
+    },
     "mac": {
-      "category": "public.app-category.developer-tools",
+      "category": "public.app-category.games",
       "icon": "assets/icon.icns",
-      "target": "dmg"
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ]
     },
     "win": {
       "icon": "assets/icon.ico",
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "category": "Game",
+      "target": ["AppImage"]
     },
     "files": [
-      "**/*",
+      "dist/**/*",
+      "main.js",
+      "preload.js",
+      "settings*.js",
+      "settings*.html",
+      "package.json",
+      "assets/**/*",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
       "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
       "!**/node_modules/*.d.ts",
@@ -55,18 +84,24 @@
       "!.editorconfig",
       "!**/._*",
       "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.idea,.vscode,__pycache__,thumbs.db,.gitignore,.gitattributes,.flowconfig,.yarn-metadata.json,.idea,app-builder-bin}",
-      "!python_backend/venv",
-      "!python_backend/.venv"
+      "!src/**/*",
+      "!webpack.config.js"
     ],
     "extraResources": [
       {
-        "from": "python_backend/dist/mcp_backend",
-        "to": "mcp_backend",
-        "filter": [
-          "**/*"
-        ]
+        "from": "../python_backend/dist/questkeeper_backend",
+        "to": "mcp_backend/questkeeper_backend",
+        "filter": ["**/*"]
       }
-    ]
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
+    }
   },
   "dependencies": {
     "katex": "^0.16.11",

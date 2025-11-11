@@ -1,12 +1,136 @@
 // main.js
 const {app, BrowserWindow, ipcMain, dialog} = require("electron");
 const path = require("path");
-const fs = require("fs").promises; // Import fs promises
+const fs = require("fs").promises;
 const fetch = require("node-fetch");
+const { spawn } = require("child_process");
 
 let mainWindow;
 let settingsWindow = null;
+let backendProcess = null;
 const pythonPort = 5001;
+
+/**
+ * Start the Python backend server
+ * Finds the bundled executable and spawns it as a child process
+ */
+function startBackend() {
+  return new Promise((resolve, reject) => {
+    console.log("[startBackend] Starting Python backend...");
+
+    // Determine backend path based on packaging
+    let backendPath;
+    if (app.isPackaged) {
+      // In production, backend is in resources/mcp_backend
+      const resourcesPath = process.resourcesPath;
+      backendPath = path.join(
+        resourcesPath,
+        "mcp_backend",
+        "questkeeper_backend",
+        process.platform === "win32" ? "questkeeper_backend.exe" : "questkeeper_backend"
+      );
+    } else {
+      // In development, try to use Python directly
+      backendPath = path.join(__dirname, "..", "python_backend", "main.py");
+    }
+
+    console.log(`[startBackend] Backend path: ${backendPath}`);
+
+    // Check if backend exists
+    fs.access(backendPath)
+      .then(() => {
+        // Spawn the backend process
+        if (app.isPackaged) {
+          // Run the executable
+          backendProcess = spawn(backendPath, [], {
+            stdio: "inherit",
+            env: { ...process.env, FLASK_PORT: pythonPort.toString() }
+          });
+        } else {
+          // Run with Python in development
+          backendProcess = spawn("python", [backendPath], {
+            stdio: "inherit",
+            env: { ...process.env, FLASK_PORT: pythonPort.toString() }
+          });
+        }
+
+        console.log(`[startBackend] Backend process started with PID: ${backendProcess.pid}`);
+
+        backendProcess.on("error", (error) => {
+          console.error("[startBackend] Backend process error:", error);
+          reject(error);
+        });
+
+        backendProcess.on("exit", (code, signal) => {
+          console.log(`[startBackend] Backend process exited with code ${code} and signal ${signal}`);
+          backendProcess = null;
+        });
+
+        // Wait for backend to be ready
+        waitForBackend()
+          .then(() => {
+            console.log("[startBackend] Backend is ready!");
+            resolve();
+          })
+          .catch(reject);
+      })
+      .catch((error) => {
+        console.error("[startBackend] Backend not found:", error);
+        // In development, continue anyway (user might run backend manually)
+        if (!app.isPackaged) {
+          console.warn("[startBackend] Development mode: continuing without auto-start");
+          resolve();
+        } else {
+          reject(new Error("Backend executable not found. Please reinstall the application."));
+        }
+      });
+  });
+}
+
+/**
+ * Wait for backend to be ready by polling the health endpoint
+ */
+function waitForBackend(maxAttempts = 30) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+
+    const checkHealth = () => {
+      attempts++;
+      console.log(`[waitForBackend] Checking backend health (attempt ${attempts}/${maxAttempts})...`);
+
+      fetch(`http://127.0.0.1:${pythonPort}/health`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.status === "ok") {
+            console.log("[waitForBackend] Backend is healthy!");
+            resolve();
+          } else {
+            throw new Error("Backend returned non-ok status");
+          }
+        })
+        .catch(error => {
+          if (attempts < maxAttempts) {
+            setTimeout(checkHealth, 1000);
+          } else {
+            reject(new Error(`Backend failed to start after ${maxAttempts} attempts`));
+          }
+        });
+    };
+
+    checkHealth();
+  });
+}
+
+/**
+ * Stop the Python backend server
+ */
+function stopBackend() {
+  if (backendProcess) {
+    console.log("[stopBackend] Stopping Python backend...");
+    backendProcess.kill();
+    backendProcess = null;
+  }
+}
 
 function createSettingsWindow() {
   if (settingsWindow) {
@@ -115,9 +239,22 @@ function createWindow() {
   );
 }
 
-app.whenReady().then(() => {
-  console.log("[app.whenReady] App ready. Calling createWindow...");
-  createWindow();
+app.whenReady().then(async () => {
+  console.log("[app.whenReady] App ready. Starting backend...");
+
+  try {
+    // Start backend first
+    await startBackend();
+    console.log("[app.whenReady] Backend started successfully. Creating window...");
+    createWindow();
+  } catch (error) {
+    console.error("[app.whenReady] Failed to start backend:", error);
+    dialog.showErrorBox(
+      "Startup Error",
+      `Failed to start QuestKeeperAI backend:\n\n${error.message}\n\nPlease try restarting the application.`
+    );
+    app.quit();
+  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -132,8 +269,13 @@ app.on("window-all-closed", () => {
   }
 });
 
+app.on("before-quit", () => {
+  console.log("[app.before-quit] App quitting. Stopping backend...");
+  stopBackend();
+});
+
 app.on("quit", () => {
-  console.log("[app.quit] App quitting.");
+  console.log("[app.quit] App quit.");
 });
 
 ipcMain.handle("get-python-port", async () => {
