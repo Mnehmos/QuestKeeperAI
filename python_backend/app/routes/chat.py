@@ -31,16 +31,18 @@ def init_chat_services(llm, hub, validator):
 def chat():
     """
     Send a message to LLM with MCP tool support
-    
+
     Request:
         {
             "message": "str",
             "character_id": "uuid" (optional),
             "enable_tools": bool (default: true),
             "temperature": float (optional),
-            "max_tokens": int (optional)
+            "max_tokens": int (optional),
+            "provider": "str" (optional, e.g., "anthropic", "openai", "gemini", "openrouter", "local"),
+            "model": "str" (optional, specific model name to use)
         }
-    
+
     Response:
         {
             "status": "success|error",
@@ -66,6 +68,8 @@ def chat():
         enable_tools = data.get('enable_tools', True)
         temperature = data.get('temperature', 0.7)
         max_tokens = data.get('max_tokens', 2048)
+        provider = data.get('provider')
+        model = data.get('model')
         
         start_time = datetime.now()
         
@@ -79,14 +83,37 @@ def chat():
         
         # Build system prompt
         system_prompt = _build_system_prompt(character_id)
-        
+
+        # Get LLM provider (use specified provider/model or fall back to global)
+        current_provider = llm_provider
+        if provider:
+            from app.llm.provider import create_llm_provider
+            from app.config import settings
+
+            # Get appropriate API key
+            api_key = None
+            if provider == 'anthropic':
+                api_key = settings.ANTHROPIC_API_KEY
+            elif provider == 'openai':
+                api_key = settings.OPENAI_API_KEY
+            elif provider == 'gemini':
+                api_key = settings.GEMINI_API_KEY
+            elif provider == 'openrouter':
+                api_key = settings.OPENROUTER_API_KEY
+
+            try:
+                current_provider = create_llm_provider(provider, api_key, model)
+            except Exception as e:
+                logger.warning(f"Failed to create provider {provider}: {e}. Using default provider.")
+                current_provider = llm_provider
+
         # Call LLM
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
+
         try:
             response = loop.run_until_complete(
-                llm_provider.chat(
+                current_provider.chat(
                     messages=messages,
                     system_prompt=system_prompt,
                     tools=tools,

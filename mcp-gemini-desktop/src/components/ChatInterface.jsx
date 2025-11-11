@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../stores/gameState';
+import { ModelSelector } from './ModelSelector';
 import './ChatInterface.css';
 
 export function ChatInterface() {
@@ -10,6 +11,8 @@ export function ChatInterface() {
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState('gemini');
+  const [selectedModel, setSelectedModel] = useState('');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -31,6 +34,11 @@ export function ChatInterface() {
       textarea.style.height = 'auto';
       textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
     }
+  };
+
+  const handleModelChange = (provider, model) => {
+    setSelectedProvider(provider);
+    setSelectedModel(model);
   };
 
   const handleSubmit = async (e) => {
@@ -56,7 +64,9 @@ export function ChatInterface() {
         body: JSON.stringify({
           message: input.trim(),
           character_id: character?.id,
-          enable_tools: true
+          enable_tools: true,
+          provider: selectedProvider,
+          model: selectedModel
         })
       });
 
@@ -119,6 +129,9 @@ export function ChatInterface() {
 
   return (
     <div className="chat-interface">
+      <div className="chat-header">
+        <ModelSelector onModelChange={handleModelChange} />
+      </div>
       <div className="chat-messages">
         {messages.length === 0 ? (
           <div className="welcome-message">

@@ -8,6 +8,15 @@
   overflow: hidden;
 }
 
+.chat-header {
+  padding: var(--sp-md);
+  background: var(--bg-darker);
+  border-bottom: var(--border-thin);
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;

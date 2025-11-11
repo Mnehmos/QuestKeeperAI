@@ -22,10 +22,11 @@ def create_app():
     init_db(settings.DATABASE_URL)
 
     # Register routes
-    from app.routes import character, chat, mcp
+    from app.routes import character, chat, mcp, settings
     app.register_blueprint(character.bp)
     app.register_blueprint(chat.bp)
     app.register_blueprint(mcp.bp)
+    app.register_blueprint(settings.bp)
 
     # Health check
     @app.route('/health')
@@ -43,7 +44,8 @@ def create_app():
                 "health": "/health",
                 "characters": "/api/characters",
                 "chat": "/api/chat",
-                "mcp": "/api/mcp"
+                "mcp": "/api/mcp",
+                "settings": "/api/settings"
             }
         }
 
