@@ -1,0 +1,96 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=IBM+Plex+Mono:wght@400;600&display=swap');
+@import './variables.css';
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-mono-body);
+  background: var(--bg-dark);
+  color: var(--text-white);
+  overflow: hidden;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-mono);
+  color: var(--primary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+button {
+  font-family: var(--font-mono);
+  background: var(--bg-card);
+  color: var(--primary);
+  border: var(--border-thin);
+  padding: var(--sp-sm) var(--sp-md);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 0.9rem;
+}
+
+button:hover {
+  background: var(--bg-card-hover);
+  box-shadow: var(--glow-sm);
+  transform: translateY(-2px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input, textarea {
+  font-family: var(--font-mono-body);
+  background: var(--bg-card);
+  color: var(--text-white);
+  border: var(--border-thin);
+  padding: var(--sp-sm);
+  outline: none;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: var(--glow-sm);
+}
+
+scrollbar-width: thin;
+scrollbar-color: var(--primary) var(--bg-darker);
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-darker);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--neon-cyan);
+}
+
+.glow {
+  text-shadow: var(--glow-md);
+}
+
+.neon-border {
+  border: var(--border-thick);
+  box-shadow: var(--glow-md);
+}

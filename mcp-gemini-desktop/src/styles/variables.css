@@ -1,0 +1,41 @@
+:root {
+  /* Colors - Neon Cyberpunk Theme */
+  --primary: #00ff88;
+  --primary-dark: #00cc6f;
+  --neon-cyan: #00ffff;
+  --neon-green: #00ff00;
+  --neon-magenta: #ff00ff;
+  --neon-pink: #ff006e;
+  --neon-orange: #ff9500;
+  --neon-blue: #00d9ff;
+
+  /* Backgrounds */
+  --bg-dark: #0a0a0f;
+  --bg-darker: #050508;
+  --bg-card: #111118;
+  --bg-card-hover: #1a1a25;
+
+  /* Text */
+  --text-primary: #00ffff;
+  --text-secondary: #00ff00;
+  --text-muted: #6b7280;
+  --text-white: #e0e0e0;
+
+  /* Spacing */
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 16px;
+  --sp-lg: 24px;
+  --sp-xl: 32px;
+
+  /* Font Families */
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-mono-body: 'IBM Plex Mono', monospace;
+
+  /* Borders & Shadows */
+  --border-thin: 1px solid var(--primary);
+  --border-thick: 2px solid var(--primary);
+  --glow-sm: 0 0 10px rgba(0, 255, 136, 0.3);
+  --glow-md: 0 0 20px rgba(0, 255, 136, 0.5);
+  --glow-lg: 0 0 30px rgba(0, 255, 136, 0.7);
+}

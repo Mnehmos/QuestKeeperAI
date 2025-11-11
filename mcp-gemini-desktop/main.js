@@ -45,8 +45,8 @@ function createSettingsWindow() {
 function createWindow() {
   console.log("[createWindow] Attempting to create main window...");
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1400,
+    height: 900,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -54,30 +54,31 @@ function createWindow() {
     },
     titleBarStyle: "hidden",
     trafficLightPosition: {x: 15, y: 15},
-    minWidth: 800,
-    minHeight: 600,
-    title: "GemCP Chat",
-    backgroundColor: "#fdfcf7",
+    minWidth: 1000,
+    minHeight: 700,
+    title: "QuestKeeperAI",
+    backgroundColor: "#0a0a0f",
     icon: path.join(
       __dirname,
       "assets",
       app.isPackaged ? "icon.png" : "icon.png"
-    ), // Optional: set icon for window itself
+    ),
   });
   console.log("[createWindow] BrowserWindow created.");
 
-  const indexPath = path.join(__dirname, "index.html");
+  // Load React app from webpack build
+  const indexPath = path.join(__dirname, "dist", "index.html");
   console.log(`[createWindow] Attempting to load file: ${indexPath}`);
   mainWindow
     .loadFile(indexPath)
     .then(() => {
-      console.log("[createWindow] index.html loaded successfully.");
+      console.log("[createWindow] React app loaded successfully.");
     })
     .catch((err) => {
-      console.error("[createWindow] Error loading index.html:", err);
+      console.error("[createWindow] Error loading React app:", err);
       dialog.showErrorBox(
         "Loading Error",
-        `Failed to load index.html: ${err.message}`
+        `Failed to load QuestKeeperAI: ${err.message}\n\nMake sure to run 'npm run build' first.`
       );
     });
 
