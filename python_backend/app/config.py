@@ -14,6 +14,7 @@ class LLMProvider(str, Enum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     GEMINI = "gemini"
+    OPENROUTER = "openrouter"
     LOCAL = "local"
 
 class Environment(str, Enum):
@@ -41,6 +42,7 @@ class Settings:
     ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = None
     
     # Local LLM Configuration (Ollama, vLLM, etc.)
     LOCAL_LLM_URL: str = "http://localhost:11434"
@@ -76,6 +78,7 @@ class Settings:
         self.ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
         self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        self.OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
         
         # Load provider
         provider_env = os.getenv("LLM_PROVIDER", "gemini")

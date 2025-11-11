@@ -129,9 +129,16 @@
     /* Provider Radio Buttons */
     .provider-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 12px;
       margin-top: 8px;
+    }
+
+    /* Responsive - back to 2 columns on smaller screens */
+    @media (max-width: 600px) {
+      .provider-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
 
     .provider-option {
@@ -310,6 +317,10 @@
             <label for="provider-gemini" class="provider-label">✨ Gemini</label>
           </div>
           <div class="provider-option">
+            <input type="radio" id="provider-openrouter" name="provider" value="openrouter">
+            <label for="provider-openrouter" class="provider-label">🌐 OpenRouter</label>
+          </div>
+          <div class="provider-option">
             <input type="radio" id="provider-local" name="provider" value="local">
             <label for="provider-local" class="provider-label">🏠 Local</label>
           </div>
@@ -340,6 +351,15 @@
           <label for="gemini-key">Gemini API Key</label>
           <input type="password" id="gemini-key" placeholder="AIza...">
           <div class="hint">Get your API key from aistudio.google.com</div>
+        </div>
+      </div>
+
+      <!-- OpenRouter API Key -->
+      <div id="openrouter-section" class="api-key-section">
+        <div class="form-group">
+          <label for="openrouter-key">OpenRouter API Key</label>
+          <input type="password" id="openrouter-key" placeholder="sk-or-v1-...">
+          <div class="hint">Get your API key from openrouter.ai/keys</div>
         </div>
       </div>
 

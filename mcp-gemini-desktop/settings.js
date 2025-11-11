@@ -5,11 +5,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const anthropicSection = document.getElementById('anthropic-section');
   const openaiSection = document.getElementById('openai-section');
   const geminiSection = document.getElementById('gemini-section');
+  const openrouterSection = document.getElementById('openrouter-section');
   const localSection = document.getElementById('local-section');
 
   const anthropicKeyInput = document.getElementById('anthropic-key');
   const openaiKeyInput = document.getElementById('openai-key');
   const geminiKeyInput = document.getElementById('gemini-key');
+  const openrouterKeyInput = document.getElementById('openrouter-key');
   const localUrlInput = document.getElementById('local-url');
   const localModelInput = document.getElementById('local-model');
 
@@ -35,6 +37,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     anthropicSection.classList.remove('active');
     openaiSection.classList.remove('active');
     geminiSection.classList.remove('active');
+    openrouterSection.classList.remove('active');
     localSection.classList.remove('active');
 
     // Show selected section
@@ -50,6 +53,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       case 'gemini':
         geminiSection.classList.add('active');
         geminiKeyInput.focus();
+        break;
+      case 'openrouter':
+        openrouterSection.classList.add('active');
+        openrouterKeyInput.focus();
         break;
       case 'local':
         localSection.classList.add('active');
@@ -117,6 +124,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           settings.api_key = geminiKeyInput.value.trim();
           if (!settings.api_key) {
             throw new Error('Please enter your Gemini API key');
+          }
+          break;
+
+        case 'openrouter':
+          settings.api_key = openrouterKeyInput.value.trim();
+          if (!settings.api_key) {
+            throw new Error('Please enter your OpenRouter API key');
           }
           break;
 
