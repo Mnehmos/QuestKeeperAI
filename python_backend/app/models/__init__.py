@@ -1,3 +1,7 @@
+"""
+QuestKeeperAI - Database Models Module
+"""
+
 from .database import (
     Base,
     Character,
@@ -5,10 +9,12 @@ from .database import (
     InventoryItem,
     Quest,
     CombatSession,
+    Spell,
     MCPServer,
     ToolCall,
     init_db,
-    get_session
+    get_session,
+    get_or_create_session
 )
 
 __all__ = [
@@ -18,8 +24,10 @@ __all__ = [
     "InventoryItem",
     "Quest",
     "CombatSession",
+    "Spell",
     "MCPServer",
     "ToolCall",
     "init_db",
-    "get_session"
+    "get_session",
+    "get_or_create_session"
 ]

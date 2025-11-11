@@ -1,31 +1,35 @@
-# Core Dependencies
+# QuestKeeperAI Backend Dependencies
+# Python 3.9+
+
+# Core Framework
 Flask==3.0.0
 Flask-CORS==4.0.0
-python-dotenv==1.0.0
-
-# LLM Providers
-anthropic>=0.7.0
-openai>=1.0.0
-google-genai>=1.7.0
-
-# Data & Config
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
+python-dotenv==1.0.1
 
 # Database
-SQLAlchemy>=2.0.0
-alembic>=1.13.0
+SQLAlchemy==2.0.23
+alembic==1.13.1
 
-# HTTP Client
-httpx>=0.25.0
+# LLM Providers
+anthropic>=0.21.0       # Claude
+openai>=1.12.0          # GPT
+google-genai>=1.7.0     # Gemini (existing)
 
-# MCP
+# Async & HTTP
+httpx>=0.27.0
+aiohttp>=3.9.0
+
+# MCP Protocol
 mcp>=1.5.0
 
-# Development Dependencies (optional)
-# pytest>=7.4.0
-# pytest-cov>=4.1.0
-# pytest-asyncio>=0.21.0
-# black>=23.0.0
-# flake8>=6.0.0
-# mypy>=1.5.0
+# Utilities
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
+
+# Development (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.8.0
