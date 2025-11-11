@@ -138,21 +138,23 @@ function createSettingsWindow() {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 400,
-    height: 200,
-    title: "Settings",
+    width: 650,
+    height: 700,
+    title: "QuestKeeperAI Settings",
     parent: mainWindow,
     modal: true,
     show: false,
-    resizable: false,
+    resizable: true,
     minimizable: false,
     maximizable: false,
+    minWidth: 600,
+    minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, "settings_preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
-    backgroundColor: "#f4f1e7",
+    backgroundColor: "#0a0a0f",
   });
 
   settingsWindow.loadFile(path.join(__dirname, "settings.html"));

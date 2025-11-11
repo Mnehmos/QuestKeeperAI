@@ -1,123 +1,384 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self';" />
-    <title>Settings</title>
-    <style>
-      :root {
-        --chat-bg: #fdfcf7;
-        --sidebar-bg: #f4f1e7;
-        --border-color: #dcd3c4;
-        --text-primary: #4a3f32;
-        --accent-color: #6b5a48;
-        --accent-hover: #5d4e3c;
-        --user-message-text: #fdfcf7;
-      }
-      body {
-        font-family: var(--font-family);
-        padding: 20px 25px;
-        background-color: var(--sidebar-bg); /* Match sidebar */
-        color: var(--text-primary);
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        height: 100vh;
-      }
-      .form-group {
-        margin-bottom: 16px; /* Consistent spacing */
-      }
-      label {
-        display: block;
-        margin-bottom: 6px;
-        font-weight: 500;
-        font-size: 0.9em;
-        color: var(--text-primary);
-      }
-      input[type="password"],
-      select {
-        width: 100%;
-        padding: 10px 14px; /* Increased padding */
-        border: 1px solid var(--border-color);
-        border-radius: 8px; /* Consistent radius */
-        box-sizing: border-box;
-        font-size: 0.95em;
-        background-color: var(--chat-bg); /* Match chat input bg */
-        color: var(--text-primary);
-        transition: border-color 0.2s ease, box-shadow 0.2s ease;
-      }
-      input[type="password"]:focus,
-      select:focus {
-        outline: none;
-        border-color: var(--accent-color);
-        box-shadow: 0 0 0 3px rgba(107, 90, 72, 0.2); /* Match chat input focus */
-      }
-      .buttons {
-        display: flex;
-        justify-content: flex-end;
-        gap: 10px; /* Slightly reduced gap */
-        margin-top: 10px; /* Space above buttons */
-      }
-      button {
-        padding: 9px 16px; /* Adjusted padding */
-        border-radius: 6px; /* Consistent radius */
-        border: 1px solid transparent;
-        cursor: pointer;
-        font-size: 0.95em; /* Match input font size */
-        font-weight: 500;
-        transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-      }
-      #save-btn {
-        background-color: var(--accent-color); /* Match Add Server button */
-        color: var(--user-message-text);
-        border-color: var(--accent-color);
-      }
-      #save-btn:hover {
-        background-color: var(--accent-hover);
-        border-color: var(--accent-hover);
-      }
-      #cancel-btn {
-        background-color: transparent; /* Match Settings button */
-        color: var(--text-secondary); /* Match Settings button */
-        border: 1px solid var(--border-color); /* Match Settings button */
-      }
-      #cancel-btn:hover {
-        background-color: #edeae0; /* Match Settings button hover */
-        border-color: #c8bfaf;
-        color: var(--text-primary);
-      }
-      select {
-        appearance: none;
-        background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%236B5A48%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
-        background-repeat: no-repeat;
-        background-position: right 14px center;
-        background-size: 0.7em auto;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="form-group">
-      <label for="api-key">Gemini API Key:</label>
-      <input type="password" id="api-key" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;" />
+  <title>QuestKeeperAI Settings</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+    :root {
+      /* Neon Cyberpunk Theme */
+      --primary: #00ff88;
+      --primary-dark: #00cc6f;
+      --neon-cyan: #00ffff;
+      --neon-green: #00ff00;
+      --neon-pink: #ff006e;
+
+      --bg-dark: #0a0a0f;
+      --bg-darker: #050508;
+      --bg-card: #111118;
+      --bg-card-hover: #1a1a25;
+
+      --text-primary: #00ffff;
+      --text-secondary: #00ff00;
+      --text-muted: #6b7280;
+      --text-white: #e0e0e0;
+
+      --border-thin: 1px solid var(--primary);
+      --glow-sm: 0 0 10px rgba(0, 255, 136, 0.3);
+      --glow-md: 0 0 20px rgba(0, 255, 136, 0.5);
+
+      --font-mono: 'Share Tech Mono', monospace;
+      --font-mono-body: 'IBM Plex Mono', monospace;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-mono-body);
+      background: var(--bg-dark);
+      color: var(--text-white);
+      padding: 24px;
+      overflow-y: auto;
+      max-height: 100vh;
+    }
+
+    h2 {
+      font-family: var(--font-mono);
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-size: 1.3rem;
+      margin-bottom: 20px;
+      text-shadow: var(--glow-sm);
+      text-align: center;
+    }
+
+    .settings-container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .section {
+      background: var(--bg-card);
+      border: var(--border-thin);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .section-title {
+      font-family: var(--font-mono);
+      color: var(--neon-cyan);
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--bg-card-hover);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="url"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--bg-darker);
+      color: var(--text-white);
+      border: var(--border-thin);
+      border-radius: 4px;
+      font-family: var(--font-mono-body);
+      font-size: 0.9rem;
+      transition: all 0.3s ease;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: var(--neon-cyan);
+      box-shadow: var(--glow-sm);
+    }
+
+    input::placeholder {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Provider Radio Buttons */
+    .provider-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .provider-option {
+      position: relative;
+    }
+
+    .provider-option input[type="radio"] {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .provider-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px;
+      background: var(--bg-darker);
+      border: var(--border-thin);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .provider-option input[type="radio"]:checked + .provider-label {
+      background: var(--bg-card-hover);
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+      box-shadow: var(--glow-sm);
+    }
+
+    .provider-label:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+    }
+
+    /* API Key Section Visibility */
+    .api-key-section {
+      display: none;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--bg-card-hover);
+    }
+
+    .api-key-section.active {
+      display: block;
+    }
+
+    .hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      font-style: italic;
+    }
+
+    /* Buttons */
+    .buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    button {
+      font-family: var(--font-mono);
+      padding: 10px 20px;
+      border-radius: 4px;
+      border: var(--border-thin);
+      cursor: pointer;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.3s ease;
+      font-weight: 600;
+    }
+
+    #save-btn {
+      background: var(--primary);
+      color: var(--bg-dark);
+      border-color: var(--primary);
+    }
+
+    #save-btn:hover:not(:disabled) {
+      background: var(--neon-cyan);
+      box-shadow: var(--glow-md);
+      transform: translateY(-2px);
+    }
+
+    #save-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    #cancel-btn {
+      background: transparent;
+      color: var(--text-muted);
+      border-color: var(--text-muted);
+    }
+
+    #cancel-btn:hover {
+      color: var(--neon-pink);
+      border-color: var(--neon-pink);
+    }
+
+    /* Status Message */
+    .status-message {
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 0.85rem;
+      border: var(--border-thin);
+      display: none;
+    }
+
+    .status-message.success {
+      display: block;
+      background: rgba(0, 255, 136, 0.1);
+      border-color: var(--neon-green);
+      color: var(--neon-green);
+    }
+
+    .status-message.error {
+      display: block;
+      background: rgba(255, 0, 110, 0.1);
+      border-color: var(--neon-pink);
+      color: var(--neon-pink);
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-darker);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--primary);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--neon-cyan);
+    }
+  </style>
+</head>
+<body>
+  <div class="settings-container">
+    <h2>⚙️ Settings</h2>
+
+    <div id="status-message" class="status-message"></div>
+
+    <!-- LLM Provider Section -->
+    <div class="section">
+      <div class="section-title">LLM Provider</div>
+
+      <div class="form-group">
+        <label>Select Provider</label>
+        <div class="provider-grid">
+          <div class="provider-option">
+            <input type="radio" id="provider-anthropic" name="provider" value="anthropic">
+            <label for="provider-anthropic" class="provider-label">🤖 Claude</label>
+          </div>
+          <div class="provider-option">
+            <input type="radio" id="provider-openai" name="provider" value="openai">
+            <label for="provider-openai" class="provider-label">🔷 OpenAI</label>
+          </div>
+          <div class="provider-option">
+            <input type="radio" id="provider-gemini" name="provider" value="gemini" checked>
+            <label for="provider-gemini" class="provider-label">✨ Gemini</label>
+          </div>
+          <div class="provider-option">
+            <input type="radio" id="provider-local" name="provider" value="local">
+            <label for="provider-local" class="provider-label">🏠 Local</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Anthropic API Key -->
+      <div id="anthropic-section" class="api-key-section">
+        <div class="form-group">
+          <label for="anthropic-key">Anthropic API Key</label>
+          <input type="password" id="anthropic-key" placeholder="sk-ant-api03-...">
+          <div class="hint">Get your API key from console.anthropic.com</div>
+        </div>
+      </div>
+
+      <!-- OpenAI API Key -->
+      <div id="openai-section" class="api-key-section">
+        <div class="form-group">
+          <label for="openai-key">OpenAI API Key</label>
+          <input type="password" id="openai-key" placeholder="sk-proj-...">
+          <div class="hint">Get your API key from platform.openai.com</div>
+        </div>
+      </div>
+
+      <!-- Gemini API Key -->
+      <div id="gemini-section" class="api-key-section active">
+        <div class="form-group">
+          <label for="gemini-key">Gemini API Key</label>
+          <input type="password" id="gemini-key" placeholder="AIza...">
+          <div class="hint">Get your API key from aistudio.google.com</div>
+        </div>
+      </div>
+
+      <!-- Local LLM Config -->
+      <div id="local-section" class="api-key-section">
+        <div class="form-group">
+          <label for="local-url">Local LLM URL</label>
+          <input type="url" id="local-url" placeholder="http://localhost:11434" value="http://localhost:11434">
+          <div class="hint">Ollama, vLLM, or compatible API endpoint</div>
+        </div>
+        <div class="form-group">
+          <label for="local-model">Model Name</label>
+          <input type="text" id="local-model" placeholder="mistral" value="mistral">
+          <div class="hint">Available model on your local server</div>
+        </div>
+      </div>
     </div>
 
-    <div class="form-group">
-      <label for="model-select">Gemini Model:</label>
-    <select id="model-select">
-      <!-- Options will be populated by settings.js -->
-      <option value="">Loading models...</option>
-    </select>
+    <!-- Advanced Settings -->
+    <div class="section">
+      <div class="section-title">Advanced</div>
+
+      <div class="form-group">
+        <label for="debug-mode">Debug Mode</label>
+        <select id="debug-mode">
+          <option value="false">Disabled</option>
+          <option value="true">Enabled</option>
+        </select>
+        <div class="hint">Show verbose logging in console</div>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
     <div class="buttons">
       <button id="cancel-btn">Cancel</button>
-      <button id="save-btn">Save</button>
+      <button id="save-btn">Save Settings</button>
     </div>
-    <script src="settings.js"></script>
-  </body>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
 </html>
