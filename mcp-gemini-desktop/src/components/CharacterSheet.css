@@ -1,0 +1,218 @@
+.character-sheet {
+  background: var(--bg-card);
+  border: var(--border-thin);
+  border-radius: 8px;
+  margin: var(--sp-md);
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.character-sheet:hover {
+  border-color: var(--neon-cyan);
+  box-shadow: var(--glow-sm);
+}
+
+.character-sheet.empty {
+  padding: var(--sp-lg);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-md);
+  background: var(--bg-darker);
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+.sheet-header:hover {
+  background: var(--bg-card-hover);
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.character-name {
+  font-size: 1.2rem;
+  color: var(--primary);
+  text-shadow: var(--glow-sm);
+  margin: 0;
+}
+
+.character-class {
+  font-size: 0.85rem;
+  color: var(--neon-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.level {
+  font-family: var(--font-mono);
+  color: var(--neon-green);
+  font-size: 0.9rem;
+}
+
+.toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--primary);
+  font-size: 1rem;
+  padding: var(--sp-xs);
+  cursor: pointer;
+}
+
+.sheet-body {
+  padding: var(--sp-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+}
+
+/* Vitals Section */
+.vitals-section {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--sp-md);
+}
+
+.vital {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.vital label {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.hp-bar {
+  height: 20px;
+  background: var(--bg-darker);
+  border: var(--border-thin);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--neon-green), var(--primary));
+  transition: width 0.5s ease;
+  box-shadow: var(--glow-sm);
+}
+
+.vital span {
+  font-family: var(--font-mono);
+  color: var(--text-white);
+  font-size: 0.9rem;
+}
+
+.ac-value {
+  font-size: 2rem;
+  font-family: var(--font-mono);
+  color: var(--neon-cyan);
+  text-align: center;
+  text-shadow: var(--glow-md);
+}
+
+/* Ability Scores Grid */
+.abilities-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--sp-sm);
+}
+
+.ability-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--sp-sm);
+  background: var(--bg-darker);
+  border: var(--border-thin);
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.ability-box:hover {
+  border-color: var(--neon-cyan);
+  transform: translateY(-2px);
+  box-shadow: var(--glow-sm);
+}
+
+.ability-name {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.ability-score {
+  font-size: 1.5rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.ability-mod {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--neon-cyan);
+}
+
+/* Skills Section */
+.skills-section h4 {
+  font-size: 0.9rem;
+  color: var(--primary);
+  margin-bottom: var(--sp-sm);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.skills-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-xs);
+}
+
+.skill-item {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--sp-xs) var(--sp-sm);
+  background: var(--bg-darker);
+  border-left: 2px solid var(--primary);
+  font-size: 0.85rem;
+}
+
+.skill-item span:first-child {
+  color: var(--text-white);
+}
+
+.skill-bonus {
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .abilities-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .skills-list {
+    grid-template-columns: 1fr;
+  }
+}

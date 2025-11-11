@@ -1,0 +1,278 @@
+.quest-log-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-card);
+  border: var(--border-thin);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.quest-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-md);
+  background: var(--bg-darker);
+  border-bottom: var(--border-thin);
+}
+
+.quest-log-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--primary);
+  text-shadow: var(--glow-sm);
+}
+
+.quest-stats {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--neon-cyan);
+}
+
+.quest-list {
+  flex: 1;
+  padding: var(--sp-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  overflow-y: auto;
+}
+
+.empty-quests {
+  text-align: center;
+  padding: var(--sp-xl);
+  color: var(--text-muted);
+}
+
+.quest-card {
+  position: relative;
+  background: var(--bg-darker);
+  border: var(--border-thin);
+  border-left: 4px solid;
+  border-radius: 4px;
+  padding: var(--sp-md);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.quest-card:hover {
+  transform: translateX(4px);
+  box-shadow: var(--glow-md);
+  border-color: var(--primary);
+}
+
+.quest-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+
+.quest-title {
+  font-size: 1rem;
+  color: var(--primary);
+  margin: 0;
+  flex: 1;
+}
+
+.quest-status {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  background: var(--bg-card);
+  border-radius: 2px;
+}
+
+.quest-giver {
+  font-size: 0.8rem;
+  color: var(--neon-cyan);
+  margin-bottom: var(--sp-xs);
+  font-style: italic;
+}
+
+.quest-description {
+  font-size: 0.85rem;
+  color: var(--text-white);
+  line-height: 1.5;
+  margin-bottom: var(--sp-sm);
+}
+
+.quest-progress {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.mcp-badge {
+  position: absolute;
+  top: var(--sp-xs);
+  right: var(--sp-xs);
+  background: var(--primary);
+  color: var(--bg-dark);
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 2px 4px;
+  border-radius: 2px;
+  letter-spacing: 1px;
+}
+
+/* Modal */
+.quest-detail-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border: var(--border-thick);
+  border-radius: 8px;
+  padding: var(--sp-lg);
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: var(--glow-lg);
+  position: relative;
+}
+
+.modal-content h3 {
+  margin: 0 0 var(--sp-md) 0;
+  font-size: 1.5rem;
+  padding-right: 40px;
+}
+
+.quest-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  margin-bottom: var(--sp-md);
+  padding: var(--sp-md);
+  background: var(--bg-darker);
+  border-radius: 4px;
+}
+
+.meta-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.meta-label {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.meta-value {
+  font-family: var(--font-mono);
+  color: var(--text-white);
+  font-weight: 600;
+}
+
+.quest-description-full {
+  color: var(--text-white);
+  line-height: 1.6;
+  margin-bottom: var(--sp-lg);
+  padding: var(--sp-md);
+  background: var(--bg-darker);
+  border-left: 2px solid var(--primary);
+}
+
+.objectives-section {
+  margin-bottom: var(--sp-lg);
+}
+
+.objectives-section h4 {
+  font-size: 0.9rem;
+  color: var(--primary);
+  margin-bottom: var(--sp-sm);
+}
+
+.objectives-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+.objective-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-xs) var(--sp-sm);
+  background: var(--bg-darker);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.objective-item.completed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.objective-check {
+  font-size: 1.2rem;
+  color: var(--neon-green);
+}
+
+.objective-item.completed .objective-check {
+  color: var(--primary);
+}
+
+.objective-text {
+  color: var(--text-white);
+  flex: 1;
+}
+
+.rewards-section h4 {
+  font-size: 0.9rem;
+  color: var(--primary);
+  margin-bottom: var(--sp-sm);
+}
+
+.rewards-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+
+.reward-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  padding: var(--sp-xs) var(--sp-md);
+  background: var(--bg-darker);
+  border: var(--border-thin);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-white);
+}
+
+.reward-icon {
+  font-size: 1.2rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .quest-card {
+    padding: var(--sp-sm);
+  }
+
+  .quest-title {
+    font-size: 0.9rem;
+  }
+}
