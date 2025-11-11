@@ -327,17 +327,17 @@ class GeminiProvider(LLMProvider):
 
 class LocalProvider(LLMProvider):
     """Local LLM provider (Ollama, vLLM, etc.)"""
-    
+
     def __init__(self, url: str, model: str = "mistral"):
         import httpx
         self.url = url
         self.model = model
         self.client = httpx.AsyncClient(base_url=url, timeout=60.0)
-    
+
     @property
     def provider_name(self) -> str:
         return "Local LLM"
-    
+
     async def chat(
         self,
         messages: List[Message],
@@ -347,17 +347,17 @@ class LocalProvider(LLMProvider):
         max_tokens: int = 2048
     ) -> Dict[str, Any]:
         """Chat with local LLM (Ollama format)"""
-        
+
         # Convert messages
         messages_formatted = []
         if system_prompt:
             messages_formatted.append({"role": "system", "content": system_prompt})
-        
+
         messages_formatted.extend([
             {"role": msg.role, "content": msg.content}
             for msg in messages
         ])
-        
+
         try:
             response = await self.client.post(
                 "/api/chat",
@@ -371,10 +371,10 @@ class LocalProvider(LLMProvider):
                     }
                 }
             )
-            
+
             data = response.json()
             content = data.get("message", {}).get("content", "")
-            
+
             # Local models typically don't support tool calling yet
             return {
                 "content": content,
@@ -384,7 +384,7 @@ class LocalProvider(LLMProvider):
         except Exception as e:
             logger.error(f"Local LLM error: {e}")
             raise
-    
+
     async def get_available_models(self) -> List[str]:
         """Query local LLM for available models"""
         try:
@@ -393,6 +393,126 @@ class LocalProvider(LLMProvider):
             return [model["name"] for model in data.get("models", [])]
         except:
             return [self.model]  # Fallback to configured model
+
+class OpenRouterProvider(LLMProvider):
+    """OpenRouter API provider - unified access to multiple LLMs"""
+
+    def __init__(self, api_key: str, model: str = "openai/gpt-4-turbo"):
+        try:
+            from openai import AsyncOpenAI
+            # OpenRouter uses OpenAI-compatible API with custom base URL
+            self.client = AsyncOpenAI(
+                api_key=api_key,
+                base_url="https://openrouter.ai/api/v1"
+            )
+            self.model = model
+            self.api_key = api_key
+        except ImportError:
+            raise ImportError("openai package not installed. Run: pip install openai")
+
+    @property
+    def provider_name(self) -> str:
+        return "OpenRouter"
+
+    async def chat(
+        self,
+        messages: List[Message],
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Tool]] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2048
+    ) -> Dict[str, Any]:
+        """Chat via OpenRouter - supports multiple models"""
+
+        # Convert messages
+        messages_formatted = []
+        if system_prompt:
+            messages_formatted.append({"role": "system", "content": system_prompt})
+
+        messages_formatted.extend([
+            {"role": msg.role, "content": msg.content}
+            for msg in messages
+        ])
+
+        # Format tools
+        tools_formatted = None
+        if tools:
+            tools_formatted = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.input_schema
+                    }
+                }
+                for tool in tools
+            ]
+
+        try:
+            # OpenRouter-specific headers for better routing and analytics
+            extra_headers = {
+                "HTTP-Referer": "https://questkeeper.ai",
+                "X-Title": "QuestKeeperAI"
+            }
+
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages_formatted,
+                tools=tools_formatted,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                extra_headers=extra_headers
+            )
+
+            message = response.choices[0].message
+            content = message.content or ""
+
+            tool_calls = []
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    import json
+                    tool_calls.append(ToolCall(
+                        id=tc.id,
+                        name=tc.function.name,
+                        args=json.loads(tc.function.arguments)
+                    ))
+
+            return {
+                "content": content,
+                "tool_calls": tool_calls,
+                "stop_reason": response.choices[0].finish_reason
+            }
+        except Exception as e:
+            logger.error(f"OpenRouter API error: {e}")
+            raise
+
+    async def get_available_models(self) -> List[str]:
+        """Get popular models available on OpenRouter"""
+        # OpenRouter has 50+ models, returning popular ones
+        return [
+            # OpenAI models
+            "openai/gpt-4-turbo",
+            "openai/gpt-4",
+            "openai/gpt-3.5-turbo",
+            # Anthropic models
+            "anthropic/claude-3.5-sonnet",
+            "anthropic/claude-3-opus",
+            "anthropic/claude-3-haiku",
+            # Google models
+            "google/gemini-pro",
+            "google/gemini-pro-vision",
+            # Meta models
+            "meta-llama/llama-3-70b-instruct",
+            "meta-llama/llama-3-8b-instruct",
+            # Mistral models
+            "mistralai/mistral-large",
+            "mistralai/mistral-medium",
+            # Open source models
+            "nous-hermes-2-mixtral-8x7b-dpo",
+            "openchat/openchat-7b"
+        ]
+
 
 def create_llm_provider(
     provider: str = None,
@@ -437,10 +557,15 @@ def create_llm_provider(
             raise ValueError("GEMINI_API_KEY not set")
         return GeminiProvider(api_key, model or "gemini-1.5-pro")
     
+    elif provider == "openrouter" or provider == LLMProviderEnum.OPENROUTER:
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY not set")
+        return OpenRouterProvider(api_key, model or "openai/gpt-4-turbo")
+
     elif provider == "local" or provider == LLMProviderEnum.LOCAL:
         url = local_url or settings.LOCAL_LLM_URL
         model_name = model or settings.LOCAL_LLM_MODEL
         return LocalProvider(url, model_name)
-    
+
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")
