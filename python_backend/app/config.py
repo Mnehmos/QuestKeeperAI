@@ -278,12 +278,12 @@ settings = Settings()
 
 # Ensure settings are valid
 if not settings.validate():
-    print("\n⚠️  WARNING: Configuration incomplete!")
-    print(f"   Current provider: {settings.LLM_PROVIDER.value}")
-    print(f"   API key set: {bool(settings.get_active_api_key())}")
-    print("\n   Please set your API key via:")
-    print("   1. Environment variable (e.g., ANTHROPIC_API_KEY)")
-    print("   2. Settings UI in the application")
+    print("\n[!] WARNING: Configuration incomplete!")
+    print(f"    Current provider: {settings.LLM_PROVIDER.value}")
+    print(f"    API key set: {bool(settings.get_active_api_key())}")
+    print("\n    Please set your API key via:")
+    print("    1. Environment variable (e.g., ANTHROPIC_API_KEY)")
+    print("    2. Settings UI in the application")
     print()
 else:
     # Print model info in debug mode
