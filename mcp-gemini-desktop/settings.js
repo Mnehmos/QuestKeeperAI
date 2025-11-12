@@ -68,23 +68,40 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Load current settings
   async function loadCurrentSettings() {
     try {
-      // This would call a backend endpoint to get current settings
-      // For now, we'll default to Gemini
-      const currentProvider = 'gemini'; // TODO: Get from backend
+      // Fetch current settings from backend
+      const response = await fetch('http://localhost:5001/api/settings');
+      const data = await response.json();
 
-      // Set radio button
-      const providerRadio = document.querySelector(`input[value="${currentProvider}"]`);
-      if (providerRadio) {
-        providerRadio.checked = true;
-        showProviderSection(currentProvider);
+      if (data.status === 'success') {
+        const currentProvider = data.settings.provider || 'gemini';
+
+        // Set radio button
+        const providerRadio = document.querySelector(`input[value="${currentProvider}"]`);
+        if (providerRadio) {
+          providerRadio.checked = true;
+          showProviderSection(currentProvider);
+        }
+
+        // Set debug mode
+        if (data.settings.debug_mode !== undefined) {
+          debugModeSelect.value = data.settings.debug_mode ? 'true' : 'false';
+        }
+
+        // Note: For security, we don't retrieve API keys from backend
+        // Users must re-enter them to change
+      } else {
+        throw new Error(data.error || 'Failed to load settings');
       }
-
-      // TODO: Load saved API keys (if stored)
-      // Note: For security, we might not want to retrieve keys from backend
 
     } catch (error) {
       console.error('Error loading settings:', error);
-      showMessage('Error loading settings', 'error');
+      // Don't show error message, just use defaults
+      const defaultProvider = 'gemini';
+      const providerRadio = document.querySelector(`input[value="${defaultProvider}"]`);
+      if (providerRadio) {
+        providerRadio.checked = true;
+        showProviderSection(defaultProvider);
+      }
     }
   }
 
@@ -187,19 +204,22 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Save settings to backend
   async function saveSettings(settings) {
-    // This would send settings to the Flask backend via IPC
-    // The backend would update environment variables or config file
+    // Send settings to Flask backend
+    const response = await fetch('http://localhost:5001/api/settings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(settings)
+    });
 
-    // For now, we'll use the existing saveKey method
-    // TODO: Update IPC to handle full settings object
-    if (settings.api_key) {
-      window.settingsAPI.saveKey(settings.api_key);
+    const data = await response.json();
+
+    if (data.status !== 'success') {
+      throw new Error(data.error || 'Failed to save settings');
     }
 
-    console.log('Settings to save:', settings);
-
-    // In a full implementation, we'd have:
-    // await window.settingsAPI.saveSettings(settings);
+    console.log('Settings saved:', data);
   }
 
   // Show status message
