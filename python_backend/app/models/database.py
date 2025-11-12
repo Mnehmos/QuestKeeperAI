@@ -320,6 +320,100 @@ class Spell(Base):
         }
 
 # ================================
+# CONVERSATION MANAGEMENT
+# ================================
+
+class Conversation(Base):
+    """Multi-turn conversation with token tracking"""
+    __tablename__ = "conversations"
+
+    # Identity
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    character_id = Column(String(36), ForeignKey("characters.id"), index=True, nullable=True)
+
+    # Metadata
+    title = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_modified = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Token management
+    total_tokens = Column(Integer, default=0)
+    condensed_at = Column(DateTime, nullable=True)
+
+    # Status
+    pinned = Column(Boolean, default=False)
+    archived = Column(Boolean, default=False)
+
+    # Relationships
+    messages = relationship("Message", back_populates="conversation",
+                          cascade="all, delete-orphan", order_by="Message.timestamp")
+    character = relationship("Character", foreign_keys=[character_id])
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert conversation to dictionary"""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "character_id": self.character_id,
+            "total_tokens": self.total_tokens,
+            "message_count": len(self.messages) if self.messages else 0,
+            "created_at": self.created_at.isoformat(),
+            "last_modified": self.last_modified.isoformat(),
+            "pinned": self.pinned,
+            "archived": self.archived,
+            "condensed_at": self.condensed_at.isoformat() if self.condensed_at else None
+        }
+
+class Message(Base):
+    """Individual message in conversation"""
+    __tablename__ = "messages"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    conversation_id = Column(String(36), ForeignKey("conversations.id"),
+                            nullable=False, index=True)
+
+    # Message content
+    role = Column(String(20), nullable=False)  # user, assistant, system
+    content = Column(Text, nullable=False)
+
+    # Token tracking
+    token_count = Column(Integer, default=0)
+
+    # Metadata
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    execution_ms = Column(Integer, nullable=True)
+
+    # Tool calls (JSON array)
+    tool_calls = Column(JSON, nullable=True)
+
+    # Condensation tracking
+    is_condensed = Column(Boolean, default=False)
+    original_message_count = Column(Integer, nullable=True)
+
+    # Provider tracking for accurate token counting
+    provider = Column(String(50), nullable=True)
+    model = Column(String(100), nullable=True)
+
+    # Relationships
+    conversation = relationship("Conversation", back_populates="messages")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert message to dictionary"""
+        return {
+            "id": self.id,
+            "conversation_id": self.conversation_id,
+            "role": self.role,
+            "content": self.content,
+            "token_count": self.token_count,
+            "timestamp": self.timestamp.isoformat(),
+            "execution_ms": self.execution_ms,
+            "tool_calls": self.tool_calls,
+            "is_condensed": self.is_condensed,
+            "provider": self.provider,
+            "model": self.model
+        }
+
+# ================================
 # MCP SERVER MANAGEMENT
 # ================================
 

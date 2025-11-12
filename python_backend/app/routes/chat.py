@@ -30,11 +30,12 @@ def init_chat_services(llm, hub, validator):
 @bp.route('', methods=['POST'])
 def chat():
     """
-    Send a message to LLM with MCP tool support
+    Send a message to LLM with MCP tool support and conversation history
 
     Request:
         {
             "message": "str",
+            "conversation_id": "uuid" (optional, creates new if not provided),
             "character_id": "uuid" (optional),
             "enable_tools": bool (default: true),
             "temperature": float (optional),
@@ -46,103 +47,198 @@ def chat():
     Response:
         {
             "status": "success|error",
+            "conversation_id": "uuid",
+            "message_id": "uuid",
             "reply": "str",
             "tool_calls": [{tool execution results}],
-            "execution_ms": int
+            "execution_ms": int,
+            "total_tokens": int
         }
     """
     try:
         from datetime import datetime
         from app.llm import Message, Tool
-        
+        from app.models.database import Conversation, Message as DBMessage, get_or_create_session
+        from app.services.token_counter import token_counter
+
         data = request.get_json()
-        
+
         if not data or 'message' not in data:
             return jsonify({
                 "status": "error",
                 "error": "No message provided"
             }), 400
-        
-        message = data['message']
+
+        message_content = data['message']
+        conversation_id = data.get('conversation_id')
         character_id = data.get('character_id')
         enable_tools = data.get('enable_tools', True)
         temperature = data.get('temperature', 0.7)
         max_tokens = data.get('max_tokens', 2048)
         provider = data.get('provider')
         model = data.get('model')
-        
+
         start_time = datetime.now()
-        
-        # Build message history
-        messages = [Message(role="user", content=message)]
-        
-        # Get available tools if enabled
-        tools = None
-        if enable_tools and mcp_hub:
-            tools = _get_available_tools()
-        
-        # Build system prompt
-        system_prompt = _build_system_prompt(character_id)
 
-        # Get LLM provider (use specified provider/model or fall back to global)
-        current_provider = llm_provider
-        if provider:
-            from app.llm.provider import create_llm_provider
-            from app.config import settings
-
-            # Get appropriate API key
-            api_key = None
-            if provider == 'anthropic':
-                api_key = settings.ANTHROPIC_API_KEY
-            elif provider == 'openai':
-                api_key = settings.OPENAI_API_KEY
-            elif provider == 'gemini':
-                api_key = settings.GEMINI_API_KEY
-            elif provider == 'openrouter':
-                api_key = settings.OPENROUTER_API_KEY
-
-            try:
-                # Convert empty string to None for default model
-                model_to_use = model if model else None
-                current_provider = create_llm_provider(provider, api_key, model_to_use)
-            except Exception as e:
-                logger.warning(f"Failed to create provider {provider}: {e}. Using default provider.")
-                current_provider = llm_provider
-
-        # Call LLM
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # Get database session
+        db_session = get_or_create_session()
 
         try:
-            response = loop.run_until_complete(
-                current_provider.chat(
-                    messages=messages,
-                    system_prompt=system_prompt,
-                    tools=tools,
-                    temperature=temperature,
-                    max_tokens=max_tokens
+            # Load or create conversation
+            if conversation_id:
+                conversation = db_session.query(Conversation).filter_by(
+                    id=conversation_id
+                ).first()
+                if not conversation:
+                    return jsonify({
+                        "status": "error",
+                        "error": f"Conversation {conversation_id} not found"
+                    }), 404
+            else:
+                # Create new conversation
+                conversation = Conversation(
+                    title=_generate_conversation_title(message_content),
+                    character_id=character_id
                 )
+                db_session.add(conversation)
+                db_session.flush()  # Get ID for message reference
+                logger.info(f"Created new conversation {conversation.id}")
+
+            # Add user message to database
+            user_msg = DBMessage(
+                conversation_id=conversation.id,
+                role="user",
+                content=message_content,
+                provider=provider,
+                model=model
             )
+            db_session.add(user_msg)
+            db_session.flush()
+
+            # Build message history for LLM (FULL CONVERSATION CONTEXT)
+            messages = []
+            for db_msg in conversation.messages:
+                messages.append(Message(
+                    role=db_msg.role,
+                    content=db_msg.content
+                ))
+        
+            # Get available tools if enabled
+            tools = None
+            if enable_tools and mcp_hub:
+                tools = _get_available_tools()
+
+            # Build system prompt
+            system_prompt = _build_system_prompt(character_id)
+
+            # Get LLM provider (use specified provider/model or fall back to global)
+            current_provider = llm_provider
+            if provider:
+                from app.llm.provider import create_llm_provider
+                from app.config import settings
+
+                # Get appropriate API key
+                api_key = None
+                if provider == 'anthropic':
+                    api_key = settings.ANTHROPIC_API_KEY
+                elif provider == 'openai':
+                    api_key = settings.OPENAI_API_KEY
+                elif provider == 'gemini':
+                    api_key = settings.GEMINI_API_KEY
+                elif provider == 'openrouter':
+                    api_key = settings.OPENROUTER_API_KEY
+
+                try:
+                    # Convert empty string to None for default model
+                    model_to_use = model if model else None
+                    current_provider = create_llm_provider(provider, api_key, model_to_use)
+                except Exception as e:
+                    logger.warning(f"Failed to create provider {provider}: {e}. Using default provider.")
+                    current_provider = llm_provider
+
+            # Call LLM with full conversation history
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                response = loop.run_until_complete(
+                    current_provider.chat(
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        tools=tools,
+                        temperature=temperature,
+                        max_tokens=max_tokens
+                    )
+                )
+            finally:
+                loop.close()
+
+            # Process tool calls if any
+            tool_results = []
+            if response.get('tool_calls'):
+                tool_results = _execute_tool_calls(
+                    response['tool_calls'],
+                    character_id
+                )
+
+            execution_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+
+            # Save assistant response to database
+            assistant_msg = DBMessage(
+                conversation_id=conversation.id,
+                role="assistant",
+                content=response.get('content', ''),
+                tool_calls=response.get('tool_calls'),
+                execution_ms=execution_ms,
+                provider=provider,
+                model=model
+            )
+            db_session.add(assistant_msg)
+
+            # Update conversation metadata
+            conversation.last_modified = datetime.utcnow()
+
+            # Calculate and update token counts
+            try:
+                # Count tokens for all messages
+                message_dicts = [
+                    {"role": msg.role, "content": msg.content}
+                    for msg in conversation.messages
+                ]
+                conversation.total_tokens = token_counter.count_messages(
+                    message_dicts,
+                    model=model or "claude-sonnet-4"
+                )
+            except Exception as token_error:
+                logger.warning(f"Token counting failed: {token_error}")
+                # Estimate based on message count
+                conversation.total_tokens = len(conversation.messages) * 100
+
+            db_session.commit()
+
+            logger.info(
+                f"Chat complete: conversation {conversation.id}, "
+                f"{len(conversation.messages)} messages, "
+                f"{conversation.total_tokens} tokens"
+            )
+
+            return jsonify({
+                "status": "success",
+                "conversation_id": conversation.id,
+                "message_id": assistant_msg.id,
+                "reply": response.get('content', ''),
+                "tool_calls": tool_results,
+                "stop_reason": response.get('stop_reason'),
+                "execution_ms": execution_ms,
+                "total_tokens": conversation.total_tokens
+            }), 200
+
+        except Exception as e:
+            db_session.rollback()
+            raise
+
         finally:
-            loop.close()
-        
-        # Process tool calls if any
-        tool_results = []
-        if response.get('tool_calls'):
-            tool_results = _execute_tool_calls(
-                response['tool_calls'],
-                character_id
-            )
-        
-        execution_ms = int((datetime.now() - start_time).total_seconds() * 1000)
-        
-        return jsonify({
-            "status": "success",
-            "reply": response.get('content', ''),
-            "tool_calls": tool_results,
-            "stop_reason": response.get('stop_reason'),
-            "execution_ms": execution_ms
-        }), 200
+            db_session.close()
     
     except Exception as e:
         logger.error(f"Chat error: {e}", exc_info=True)
@@ -303,6 +399,32 @@ def get_providers():
         "providers": [p.value for p in LLMProvider],
         "current": settings.LLM_PROVIDER.value
     }), 200
+
+def _generate_conversation_title(message: str, max_length: int = 50) -> str:
+    """
+    Generate conversation title from first message
+
+    Args:
+        message: First user message
+        max_length: Maximum title length
+
+    Returns:
+        Generated title
+    """
+    # Remove extra whitespace
+    title = ' '.join(message.split())
+
+    # Truncate if too long
+    if len(title) > max_length:
+        title = title[:max_length - 3] + "..."
+
+    # Fallback to timestamp if empty
+    if not title.strip():
+        from datetime import datetime
+        title = f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+
+    return title
+
 
 @bp.route('/providers', methods=['POST'])
 def set_provider():
