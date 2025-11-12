@@ -124,30 +124,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       // Add API key or config based on provider
       switch(selectedProvider) {
         case 'anthropic':
-          settings.api_key = anthropicKeyInput.value.trim();
-          if (!settings.api_key) {
-            throw new Error('Please enter your Anthropic API key');
+          if (anthropicKeyInput.value.trim()) {
+            settings.api_key = anthropicKeyInput.value.trim();
           }
           break;
 
         case 'openai':
-          settings.api_key = openaiKeyInput.value.trim();
-          if (!settings.api_key) {
-            throw new Error('Please enter your OpenAI API key');
+          if (openaiKeyInput.value.trim()) {
+            settings.api_key = openaiKeyInput.value.trim();
           }
           break;
 
         case 'gemini':
-          settings.api_key = geminiKeyInput.value.trim();
-          if (!settings.api_key) {
-            throw new Error('Please enter your Gemini API key');
+          if (geminiKeyInput.value.trim()) {
+            settings.api_key = geminiKeyInput.value.trim();
           }
           break;
 
         case 'openrouter':
-          settings.api_key = openrouterKeyInput.value.trim();
-          if (!settings.api_key) {
-            throw new Error('Please enter your OpenRouter API key');
+          if (openrouterKeyInput.value.trim()) {
+            settings.api_key = openrouterKeyInput.value.trim();
           }
           break;
 
@@ -204,6 +200,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Save settings to backend
   async function saveSettings(settings) {
+    console.log('[Settings] Saving to backend:', JSON.stringify(settings, null, 2));
+
     // Send settings to Flask backend
     const response = await fetch('http://localhost:5001/api/settings', {
       method: 'POST',
@@ -213,13 +211,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       body: JSON.stringify(settings)
     });
 
+    console.log('[Settings] Response status:', response.status);
+
     const data = await response.json();
+    console.log('[Settings] Response data:', data);
 
     if (data.status !== 'success') {
       throw new Error(data.error || 'Failed to save settings');
     }
 
-    console.log('Settings saved:', data);
+    console.log('[Settings] Settings saved successfully!');
   }
 
   // Show status message
