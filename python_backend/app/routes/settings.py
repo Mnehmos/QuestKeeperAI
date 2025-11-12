@@ -106,6 +106,9 @@ def update_settings():
         # Update API keys if provided
         api_key = data.get('api_key')
         if api_key:
+            # Trim whitespace from API key
+            api_key = api_key.strip()
+
             if provider == 'anthropic':
                 settings.ANTHROPIC_API_KEY = api_key
                 os.environ['ANTHROPIC_API_KEY'] = api_key
@@ -118,6 +121,8 @@ def update_settings():
             elif provider == 'openrouter':
                 settings.OPENROUTER_API_KEY = api_key
                 os.environ['OPENROUTER_API_KEY'] = api_key
+
+            logger.info(f"Updated API key for provider: {provider}")
 
         # Update local URL if provided
         local_url = data.get('local_url')
