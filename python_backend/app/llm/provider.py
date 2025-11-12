@@ -441,13 +441,14 @@ class GeminiProvider(LLMProvider):
             # Parse function calls from response
             if hasattr(response, 'candidates') and response.candidates:
                 for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'function_call'):
+                    if hasattr(part, 'function_call') and part.function_call:
                         fc = part.function_call
-                        tool_calls.append(ToolCall(
-                            id=fc.name,  # Gemini doesn't provide separate ID
-                            name=fc.name,
-                            args=dict(fc.args)
-                        ))
+                        if fc and hasattr(fc, 'name') and fc.name:
+                            tool_calls.append(ToolCall(
+                                id=fc.name,  # Gemini doesn't provide separate ID
+                                name=fc.name,
+                                args=dict(fc.args) if hasattr(fc, 'args') else {}
+                            ))
             
             return {
                 "content": content,
