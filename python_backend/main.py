@@ -63,6 +63,36 @@ if __name__ == '__main__':
     logger.info(f"LLM Provider: {settings.LLM_PROVIDER.value}")
     logger.info(f"Database: {settings.DATABASE_URL}")
 
+    # Load saved API keys from settings file
+    try:
+        from pathlib import Path
+        import json
+        import os
+
+        settings_file = Path.home() / '.questkeeperai' / 'settings.json'
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                saved_settings = json.load(f)
+                api_keys = saved_settings.get('api_keys', {})
+
+                # Restore API keys to settings and environment
+                if 'anthropic' in api_keys and api_keys['anthropic']:
+                    settings.ANTHROPIC_API_KEY = api_keys['anthropic']
+                    os.environ['ANTHROPIC_API_KEY'] = api_keys['anthropic']
+                if 'openai' in api_keys and api_keys['openai']:
+                    settings.OPENAI_API_KEY = api_keys['openai']
+                    os.environ['OPENAI_API_KEY'] = api_keys['openai']
+                if 'gemini' in api_keys and api_keys['gemini']:
+                    settings.GEMINI_API_KEY = api_keys['gemini']
+                    os.environ['GEMINI_API_KEY'] = api_keys['gemini']
+                if 'openrouter' in api_keys and api_keys['openrouter']:
+                    settings.OPENROUTER_API_KEY = api_keys['openrouter']
+                    os.environ['OPENROUTER_API_KEY'] = api_keys['openrouter']
+
+                logger.info("Loaded saved API keys from settings file")
+    except Exception as e:
+        logger.warning(f"Could not load saved API keys: {e}")
+
     # Validate configuration
     if not settings.validate():
         logger.warning("Configuration incomplete - some features may not work")

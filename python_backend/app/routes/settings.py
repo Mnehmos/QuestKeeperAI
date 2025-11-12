@@ -130,12 +130,23 @@ def update_settings():
         if local_url and provider == 'local':
             settings.LOCAL_BASE_URL = local_url
 
-        # Save user preferences
+        # Load existing settings to preserve API keys
+        existing_settings = load_user_settings()
+        existing_api_keys = existing_settings.get('api_keys', {})
+
+        # Save user preferences (including API keys)
+        # Note: API keys are stored in plain text for convenience
+        # For production, consider using system keychain
         user_settings = {
             'provider': provider,
             'model': data.get('model'),
-            'debug_mode': data.get('debug_mode', False)
+            'debug_mode': data.get('debug_mode', False),
+            'api_keys': existing_api_keys  # Preserve existing keys
         }
+
+        # Update API key if it was provided
+        if api_key:
+            user_settings['api_keys'][provider] = api_key
 
         if not save_user_settings(user_settings):
             return jsonify({

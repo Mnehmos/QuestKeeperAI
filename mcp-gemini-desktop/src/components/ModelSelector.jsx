@@ -10,10 +10,19 @@ export function ModelSelector({ onModelChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('models'); // 'models' or 'providers'
 
-  // Load settings and providers on mount
+  // Load settings and providers on mount and when window regains focus
   useEffect(() => {
     loadSettings();
     loadAvailableProviders();
+
+    // Reload settings when window regains focus (after closing settings dialog)
+    const handleFocus = () => {
+      loadSettings();
+      loadAvailableProviders();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   // Load available models when provider changes
