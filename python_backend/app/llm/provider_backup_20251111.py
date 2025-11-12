@@ -1,11 +1,6 @@
 """
-QuestKeeperAI - LLM Provider Abstraction (Updated November 2025)
+QuestKeeperAI - LLM Provider Abstraction
 BYOK (Bring Your Own Key) support for multiple LLM providers.
-
-Updated with latest models as of November 2025:
-- Anthropic Claude 4.5 family (Sonnet 4.5, Haiku 4.5, Opus 4.1)
-- OpenAI GPT-5 and GPT-4.1 families
-- Google Gemini 2.5 and 2.0 families
 """
 
 from abc import ABC, abstractmethod
@@ -35,46 +30,6 @@ class ToolCall:
     name: str
     args: Dict[str, Any]
 
-# Model aliases for easier selection
-MODEL_ALIASES = {
-    # Anthropic - Tier-based aliases
-    "claude-best": "claude-opus-4-1",
-    "claude-balanced": "claude-sonnet-4-5",
-    "claude-fast": "claude-haiku-4-5",
-    "claude-budget": "claude-haiku-4-5",
-    
-    # OpenAI - Tier-based aliases
-    "gpt-best": "gpt-5",
-    "gpt-balanced": "gpt-4.1",
-    "gpt-fast": "gpt-4.1-mini",
-    "gpt-budget": "gpt-5-nano",
-    
-    # Google - Tier-based aliases (Updated to 2.5 family)
-    "gemini-best": "gemini-2.5-pro",
-    "gemini-balanced": "gemini-2.5-flash",
-    "gemini-fast": "gemini-2.5-flash",
-    "gemini-budget": "gemini-2.0-flash-lite",
-}
-
-# Deprecated models with migration paths
-DEPRECATED_MODELS = {
-    # Anthropic
-    "claude-sonnet-4-20250514": "claude-sonnet-4-5",
-    "claude-3-5-sonnet-20241022": "claude-sonnet-4-5",
-    "claude-3-opus-20240229": "claude-opus-4-1",
-    
-    # OpenAI
-    "gpt-4-turbo": "gpt-4.1",
-    "gpt-4o": "gpt-4.1",
-    "gpt-3.5-turbo": "gpt-4.1-mini",
-    
-    # Google (Updated deprecation paths to 2.5)
-    "gemini-1.5-pro": "gemini-2.5-pro",
-    "gemini-1.5-flash": "gemini-2.5-flash",
-    "gemini-pro": "gemini-2.5-flash",
-    "gemini-2.0-flash": "gemini-2.5-flash",  # Upgrade 2.0 → 2.5
-}
-
 class LLMProvider(ABC):
     """Abstract base class for LLM providers"""
     
@@ -85,8 +40,7 @@ class LLMProvider(ABC):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Tool]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        **kwargs  # For provider-specific parameters
+        max_tokens: int = 2048
     ) -> Dict[str, Any]:
         """
         Send messages to LLM and get response
@@ -110,31 +64,15 @@ class LLMProvider(ABC):
     def provider_name(self) -> str:
         """Get provider name"""
         pass
-    
-    def resolve_model_alias(self, model: str) -> str:
-        """Resolve model alias to actual model ID"""
-        # Check for deprecated models
-        if model in DEPRECATED_MODELS:
-            new_model = DEPRECATED_MODELS[model]
-            logger.warning(f"Model '{model}' is deprecated. Using '{new_model}' instead.")
-            return new_model
-        
-        # Check for aliases
-        if model in MODEL_ALIASES:
-            resolved = MODEL_ALIASES[model]
-            logger.info(f"Resolved alias '{model}' to '{resolved}'")
-            return resolved
-        
-        return model
 
 class AnthropicProvider(LLMProvider):
-    """Anthropic Claude API provider - Updated November 2025"""
+    """Anthropic Claude API provider"""
     
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-5"):
+    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
         try:
             from anthropic import Anthropic
             self.client = Anthropic(api_key=api_key)
-            self.model = self.resolve_model_alias(model)
+            self.model = model
         except ImportError:
             raise ImportError("anthropic package not installed. Run: pip install anthropic")
     
@@ -148,14 +86,9 @@ class AnthropicProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Tool]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        **kwargs
+        max_tokens: int = 2048
     ) -> Dict[str, Any]:
         """Chat with Claude using tool use"""
-        
-        # Handle extended context window (1M tokens with beta header)
-        use_extended_context = kwargs.get('extended_context', False)
-        thinking_mode = kwargs.get('thinking_mode', False)  # For Claude 3.7
         
         # Convert messages to Anthropic format
         messages_formatted = [
@@ -176,30 +109,14 @@ class AnthropicProvider(LLMProvider):
             ]
         
         try:
-            # Build request parameters
-            request_params = {
-                "model": self.model,
-                "max_tokens": max_tokens,
-                "system": system_prompt or "",
-                "messages": messages_formatted,
-                "temperature": temperature
-            }
-            
-            if tools_formatted:
-                request_params["tools"] = tools_formatted
-            
-            # Add beta headers if needed
-            extra_headers = {}
-            if use_extended_context and "sonnet-4-5" in self.model:
-                extra_headers["anthropic-beta"] = "context-1m-2025-08-07"
-            
-            if thinking_mode and "3-7" in self.model:
-                extra_headers["anthropic-beta"] = "extended-thinking-2025-02-24"
-            
-            if extra_headers:
-                request_params["extra_headers"] = extra_headers
-            
-            response = self.client.messages.create(**request_params)
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system_prompt or "",
+                tools=tools_formatted,
+                messages=messages_formatted,
+                temperature=temperature
+            )
             
             # Parse response
             content = ""
@@ -225,34 +142,21 @@ class AnthropicProvider(LLMProvider):
             raise
     
     async def get_available_models(self) -> List[str]:
-        """Current production models as of November 2025"""
         return [
-            # Latest models (November 2025)
-            "claude-sonnet-4-5",          # Default: Best coding model
-            "claude-haiku-4-5",           # Fast & cheap: 90% of Sonnet at 1/3 cost
-            "claude-opus-4-1",            # Most powerful: Complex reasoning
-            
-            # Hybrid reasoning model
-            "claude-sonnet-3-7",          # Toggleable thinking mode
-            
-            # Still supported (legacy)
-            "claude-sonnet-4",            # May 2025 release
-            "claude-3-5-sonnet-20241022", # Legacy
-            
-            # Aliases for convenience
-            "claude-best",
-            "claude-balanced", 
-            "claude-fast",
+            "claude-sonnet-4-20250514",
+            "claude-sonnet-4-20241022",
+            "claude-opus-4-20241022",
+            "claude-3-5-sonnet-20241022"
         ]
 
 class OpenAIProvider(LLMProvider):
-    """OpenAI API provider - Updated November 2025"""
+    """OpenAI API provider"""
     
-    def __init__(self, api_key: str, model: str = "gpt-4.1"):
+    def __init__(self, api_key: str, model: str = "gpt-4-turbo"):
         try:
             from openai import AsyncOpenAI
             self.client = AsyncOpenAI(api_key=api_key)
-            self.model = self.resolve_model_alias(model)
+            self.model = model
         except ImportError:
             raise ImportError("openai package not installed. Run: pip install openai")
     
@@ -266,13 +170,9 @@ class OpenAIProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Tool]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        **kwargs
+        max_tokens: int = 2048
     ) -> Dict[str, Any]:
         """Chat with GPT using function calling"""
-        
-        # Handle reasoning effort for GPT-5 models
-        reasoning_effort = kwargs.get('reasoning_effort', 'medium')  # minimal, low, medium, high
         
         # Convert messages
         messages_formatted = []
@@ -300,21 +200,13 @@ class OpenAIProvider(LLMProvider):
             ]
         
         try:
-            request_params = {
-                "model": self.model,
-                "messages": messages_formatted,
-                "temperature": temperature,
-                "max_tokens": max_tokens
-            }
-            
-            if tools_formatted:
-                request_params["tools"] = tools_formatted
-            
-            # Add reasoning effort for GPT-5 models
-            if "gpt-5" in self.model or "o3" in self.model or "o4" in self.model:
-                request_params["reasoning_effort"] = reasoning_effort
-            
-            response = await self.client.chat.completions.create(**request_params)
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages_formatted,
+                tools=tools_formatted,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
             
             message = response.choices[0].message
             content = message.content or ""
@@ -339,41 +231,17 @@ class OpenAIProvider(LLMProvider):
             raise
     
     async def get_available_models(self) -> List[str]:
-        """Current production models as of November 2025"""
-        return [
-            # GPT-5 Family (Reasoning Models) - August 2025
-            "gpt-5",              # Best for coding and agentic tasks
-            "gpt-5-mini",         # Faster, more affordable reasoning
-            "gpt-5-nano",         # Cheapest reasoning model
-            
-            # GPT-4.1 Family (Standard Models) - Early 2025
-            "gpt-4.1",            # Best general purpose
-            "gpt-4.1-mini",       # Fast and efficient
-            "gpt-4.1-nano",       # Ultra-fast, ultra-cheap
-            
-            # Voice/Realtime Models
-            "gpt-realtime",       # Advanced speech-to-speech
-            "gpt-realtime-mini",  # Cheaper voice model
-            
-            # Research Preview (being deprecated)
-            "gpt-4.5",            # Creative, broad knowledge (retire July 2025)
-            
-            # Aliases for convenience
-            "gpt-best",
-            "gpt-balanced",
-            "gpt-fast",
-            "gpt-budget",
-        ]
+        return ["gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"]
 
 class GeminiProvider(LLMProvider):
-    """Google Gemini API provider - Updated November 2025"""
+    """Google Gemini API provider (existing implementation)"""
     
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-1.5-pro"):
         try:
             from google import genai
             from google.genai import types
             self.client = genai.Client(api_key=api_key)
-            self.model = self.resolve_model_alias(model)
+            self.model = model
             self.types = types
         except ImportError:
             raise ImportError("google-genai package not installed. Run: pip install google-genai")
@@ -388,13 +256,9 @@ class GeminiProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Tool]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        **kwargs
+        max_tokens: int = 2048
     ) -> Dict[str, Any]:
         """Chat with Gemini"""
-        
-        # Handle thinking mode for Gemini 2.0 Flash Thinking
-        thinking_mode = kwargs.get('thinking_mode', False)
         
         # Convert messages to Gemini format
         messages_formatted = [
@@ -419,13 +283,8 @@ class GeminiProvider(LLMProvider):
             ]
         
         try:
-            # Use thinking variant if requested
-            model_to_use = self.model
-            if thinking_mode and "flash" in self.model.lower():
-                model_to_use = f"{self.model}-thinking-exp"
-            
             response = self.client.models.generate_content(
-                model=model_to_use,
+                model=self.model,
                 contents=messages_formatted,
                 config=self.types.GenerateContentConfig(
                     temperature=temperature,
@@ -459,28 +318,11 @@ class GeminiProvider(LLMProvider):
             raise
     
     async def get_available_models(self) -> List[str]:
-        """Current production models as of November 2025"""
         return [
-            # Gemini 2.5 Family (Latest - 2025)
-            "gemini-2.5-pro",          # Best overall, 2M context window!
-            "gemini-2.5-flash",        # Coming soon: Fast + thinking
-            
-            # Gemini 2.0 Family (Current Production)
-            "gemini-2.0-flash",        # Default: Fast, efficient, 1M context
-            "gemini-2.0-flash-lite",   # Most cost-efficient
-            "gemini-2.0-pro-exp",      # Experimental: Best coding
-            
-            # Thinking variants
-            "gemini-2.0-flash-thinking-exp",  # Reasoning capability
-            
-            # Specialized models
-            "gemini-2.5-computer-use",  # UI interaction agent
-            
-            # Aliases for convenience
-            "gemini-best",
-            "gemini-balanced",
-            "gemini-fast",
-            "gemini-budget",
+            "gemini-2.0-flash-exp",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
+            "gemini-pro"
         ]
 
 class LocalProvider(LLMProvider):
@@ -502,8 +344,7 @@ class LocalProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Tool]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        **kwargs
+        max_tokens: int = 2048
     ) -> Dict[str, Any]:
         """Chat with local LLM (Ollama format)"""
 
@@ -556,7 +397,7 @@ class LocalProvider(LLMProvider):
 class OpenRouterProvider(LLMProvider):
     """OpenRouter API provider - unified access to multiple LLMs"""
 
-    def __init__(self, api_key: str, model: str = "anthropic/claude-sonnet-4-5"):
+    def __init__(self, api_key: str, model: str = "openai/gpt-4-turbo"):
         try:
             from openai import AsyncOpenAI
             # OpenRouter uses OpenAI-compatible API with custom base URL
@@ -579,8 +420,7 @@ class OpenRouterProvider(LLMProvider):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Tool]] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
-        **kwargs
+        max_tokens: int = 2048
     ) -> Dict[str, Any]:
         """Chat via OpenRouter - supports multiple models"""
 
@@ -648,31 +488,26 @@ class OpenRouterProvider(LLMProvider):
             raise
 
     async def get_available_models(self) -> List[str]:
-        """Get popular models available on OpenRouter (Updated November 2025)"""
+        """Get popular models available on OpenRouter"""
+        # OpenRouter has 50+ models, returning popular ones
         return [
-            # Anthropic models (Latest)
-            "anthropic/claude-sonnet-4-5",
-            "anthropic/claude-haiku-4-5",
-            "anthropic/claude-opus-4-1",
-            "anthropic/claude-3-5-sonnet",
-            
-            # OpenAI models (Latest)
-            "openai/gpt-5",
-            "openai/gpt-4.1",
-            "openai/gpt-4.1-mini",
-            
-            # Google models (Latest)
-            "google/gemini-2.5-pro",
-            "google/gemini-2.0-flash",
-            
+            # OpenAI models
+            "openai/gpt-4-turbo",
+            "openai/gpt-4",
+            "openai/gpt-3.5-turbo",
+            # Anthropic models
+            "anthropic/claude-3.5-sonnet",
+            "anthropic/claude-3-opus",
+            "anthropic/claude-3-haiku",
+            # Google models
+            "google/gemini-pro",
+            "google/gemini-pro-vision",
             # Meta models
             "meta-llama/llama-3-70b-instruct",
             "meta-llama/llama-3-8b-instruct",
-            
             # Mistral models
             "mistralai/mistral-large",
             "mistralai/mistral-medium",
-            
             # Open source models
             "nous-hermes-2-mixtral-8x7b-dpo",
             "openchat/openchat-7b"
@@ -683,18 +518,16 @@ def create_llm_provider(
     provider: str = None,
     api_key: str = None,
     model: str = None,
-    local_url: str = None,
-    **kwargs
+    local_url: str = None
 ) -> LLMProvider:
     """
     Factory function to create appropriate LLM provider
     
     Args:
-        provider: Provider name (anthropic, openai, gemini, local, openrouter)
+        provider: Provider name (anthropic, openai, gemini, local)
         api_key: API key for the provider
         model: Model name (optional, uses defaults)
         local_url: URL for local LLM (only for local provider)
-        **kwargs: Additional provider-specific parameters
     
     Returns:
         Configured LLMProvider instance
@@ -708,26 +541,26 @@ def create_llm_provider(
     if api_key is None:
         api_key = settings.get_active_api_key()
     
-    # Create provider with updated default models
+    # Create provider
     if provider == "anthropic" or provider == LLMProviderEnum.ANTHROPIC:
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY not set")
-        return AnthropicProvider(api_key, model or "claude-sonnet-4-5")
+        return AnthropicProvider(api_key, model or "claude-sonnet-4-20250514")
     
     elif provider == "openai" or provider == LLMProviderEnum.OPENAI:
         if not api_key:
             raise ValueError("OPENAI_API_KEY not set")
-        return OpenAIProvider(api_key, model or "gpt-4.1")
+        return OpenAIProvider(api_key, model or "gpt-4-turbo")
     
     elif provider == "gemini" or provider == LLMProviderEnum.GEMINI:
         if not api_key:
             raise ValueError("GEMINI_API_KEY not set")
-        return GeminiProvider(api_key, model or "gemini-2.5-flash")
+        return GeminiProvider(api_key, model or "gemini-1.5-pro")
     
     elif provider == "openrouter" or provider == LLMProviderEnum.OPENROUTER:
         if not api_key:
             raise ValueError("OPENROUTER_API_KEY not set")
-        return OpenRouterProvider(api_key, model or "anthropic/claude-sonnet-4-5")
+        return OpenRouterProvider(api_key, model or "openai/gpt-4-turbo")
 
     elif provider == "local" or provider == LLMProviderEnum.LOCAL:
         url = local_url or settings.LOCAL_LLM_URL
