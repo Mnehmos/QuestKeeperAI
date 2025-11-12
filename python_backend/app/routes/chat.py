@@ -102,7 +102,9 @@ def chat():
                 api_key = settings.OPENROUTER_API_KEY
 
             try:
-                current_provider = create_llm_provider(provider, api_key, model)
+                # Convert empty string to None for default model
+                model_to_use = model if model else None
+                current_provider = create_llm_provider(provider, api_key, model_to_use)
             except Exception as e:
                 logger.warning(f"Failed to create provider {provider}: {e}. Using default provider.")
                 current_provider = llm_provider

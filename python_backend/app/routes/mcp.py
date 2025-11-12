@@ -223,7 +223,8 @@ def list_tools():
             }), 500
         
         all_tools = mcp_hub.get_tools()
-        
+
+        # Filter out None tools and build response
         tools = [
             {
                 "name": tool.name,
@@ -232,6 +233,7 @@ def list_tools():
                 "input_schema": tool.input_schema
             }
             for tool in all_tools
+            if tool is not None
         ]
         
         return jsonify({
