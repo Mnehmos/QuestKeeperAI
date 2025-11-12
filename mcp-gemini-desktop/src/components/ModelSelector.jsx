@@ -4,13 +4,16 @@ import './ModelSelector.css';
 export function ModelSelector({ onModelChange }) {
   const [provider, setProvider] = useState('gemini');
   const [model, setModel] = useState('');
+  const [availableProviders, setAvailableProviders] = useState([]);
   const [availableModels, setAvailableModels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('models'); // 'models' or 'providers'
 
-  // Load settings on mount
+  // Load settings and providers on mount
   useEffect(() => {
     loadSettings();
+    loadAvailableProviders();
   }, []);
 
   // Load available models when provider changes
@@ -37,6 +40,19 @@ export function ModelSelector({ onModelChange }) {
     }
   };
 
+  const loadAvailableProviders = async () => {
+    try {
+      const response = await fetch('http://localhost:5001/api/settings/providers');
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        setAvailableProviders(data.providers);
+      }
+    } catch (error) {
+      console.error('Failed to load providers:', error);
+    }
+  };
+
   const loadAvailableModels = async (selectedProvider) => {
     setIsLoading(true);
     try {
@@ -46,11 +62,14 @@ export function ModelSelector({ onModelChange }) {
       if (data.status === 'success') {
         setAvailableModels(data.models);
 
-        // If no model is selected, use the first one as default
-        if (!model && data.models.length > 0) {
-          const defaultModel = data.models[0];
-          setModel(defaultModel);
-          onModelChange?.(selectedProvider, defaultModel);
+        // If no model is selected or model not in list, use the first one as default
+        const modelIds = data.models.map(m => m.id);
+        if (!model || !modelIds.includes(model)) {
+          const defaultModel = data.models[0]?.id;
+          if (defaultModel) {
+            setModel(defaultModel);
+            await saveSettings(selectedProvider, defaultModel);
+          }
         }
       }
     } catch (error) {
@@ -61,68 +80,91 @@ export function ModelSelector({ onModelChange }) {
     }
   };
 
-  const handleModelChange = (newModel) => {
-    setModel(newModel);
+  const saveSettings = async (newProvider, newModel) => {
+    try {
+      await fetch('http://localhost:5001/api/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          provider: newProvider,
+          model: newModel,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    }
+  };
+
+  const handleProviderChange = async (newProvider) => {
+    setProvider(newProvider);
+    setActiveTab('models');
+    
+    // Load models for new provider
+    await loadAvailableModels(newProvider);
+  };
+
+  const handleModelChange = async (newModelId) => {
+    setModel(newModelId);
     setIsOpen(false);
-    onModelChange?.(provider, newModel);
+    await saveSettings(provider, newModelId);
+    onModelChange?.(provider, newModelId);
   };
 
-  const getProviderIcon = (providerName) => {
-    switch (providerName) {
-      case 'anthropic':
-        return '🤖';
-      case 'openai':
-        return '🔷';
-      case 'gemini':
-        return '✨';
-      case 'openrouter':
-        return '🌐';
-      case 'local':
-        return '🏠';
-      default:
-        return '⚙️';
-    }
+  const getCurrentProviderInfo = () => {
+    return availableProviders.find(p => p.id === provider) || {
+      icon: '⚙️',
+      name: provider
+    };
   };
 
-  const getProviderName = (providerName) => {
-    switch (providerName) {
-      case 'anthropic':
-        return 'Claude';
-      case 'openai':
-        return 'OpenAI';
-      case 'gemini':
-        return 'Gemini';
-      case 'openrouter':
-        return 'OpenRouter';
-      case 'local':
-        return 'Local';
-      default:
-        return providerName;
-    }
+  const getCurrentModelInfo = () => {
+    return availableModels.find(m => m.id === model) || {
+      name: model,
+      description: ''
+    };
   };
 
-  const formatModelName = (modelName) => {
-    // Shorten long model names for display
-    if (modelName.length > 30) {
-      return modelName.substring(0, 27) + '...';
-    }
-    return modelName;
+  const getCostDisplay = (cost) => {
+    if (cost === 'Free') return <span className="cost-badge free">Free</span>;
+    if (cost === '$') return <span className="cost-badge cheap">$</span>;
+    if (cost === '$$') return <span className="cost-badge moderate">$$</span>;
+    if (cost === '$$$') return <span className="cost-badge expensive">$$$</span>;
+    return null;
   };
+
+  const getTierBadge = (tier) => {
+    const tierColors = {
+      premium: 'tier-premium',
+      balanced: 'tier-balanced',
+      fast: 'tier-fast',
+      custom: 'tier-custom'
+    };
+    return <span className={`tier-badge ${tierColors[tier] || ''}`}>{tier}</span>;
+  };
+
+  const providerInfo = getCurrentProviderInfo();
+  const modelInfo = getCurrentModelInfo();
 
   return (
     <div className="model-selector">
       <button
         className="model-selector-button"
         onClick={() => setIsOpen(!isOpen)}
-        disabled={isLoading || availableModels.length === 0}
+        disabled={isLoading}
       >
-        <span className="provider-icon">{getProviderIcon(provider)}</span>
-        <span className="model-info">
-          <span className="provider-name">{getProviderName(provider)}</span>
+        <span className="provider-icon">{providerInfo.icon}</span>
+        <div className="model-info">
+          <div className="provider-line">
+            <span className="provider-label">{providerInfo.name.toUpperCase()}</span>
+          </div>
           {model && (
-            <span className="model-name">{formatModelName(model)}</span>
+            <div className="model-line">
+              <span className="model-name">{modelInfo.name}</span>
+            </div>
           )}
-        </span>
+        </div>
         <span className="dropdown-arrow">{isOpen ? '▲' : '▼'}</span>
       </button>
 
@@ -130,26 +172,99 @@ export function ModelSelector({ onModelChange }) {
         <>
           <div className="model-selector-overlay" onClick={() => setIsOpen(false)} />
           <div className="model-selector-dropdown">
-            <div className="dropdown-header">
-              <span>Select Model</span>
-              <span className="provider-badge">{getProviderName(provider)}</span>
+            {/* Tabs */}
+            <div className="dropdown-tabs">
+              <button
+                className={`tab ${activeTab === 'models' ? 'active' : ''}`}
+                onClick={() => setActiveTab('models')}
+              >
+                SELECT MODEL
+              </button>
+              <button
+                className={`tab ${activeTab === 'providers' ? 'active' : ''}`}
+                onClick={() => setActiveTab('providers')}
+              >
+                PROVIDERS
+              </button>
             </div>
-            <div className="dropdown-list">
-              {availableModels.length === 0 ? (
-                <div className="dropdown-empty">No models available</div>
-              ) : (
-                availableModels.map((modelName) => (
-                  <button
-                    key={modelName}
-                    className={`dropdown-item ${modelName === model ? 'active' : ''}`}
-                    onClick={() => handleModelChange(modelName)}
-                  >
-                    <span className="model-full-name">{modelName}</span>
-                    {modelName === model && <span className="check-icon">✓</span>}
-                  </button>
-                ))
-              )}
-            </div>
+
+            {/* Models Tab */}
+            {activeTab === 'models' && (
+              <div className="dropdown-content">
+                <div className="dropdown-header">
+                  <span className="provider-badge">
+                    {providerInfo.icon} {providerInfo.name}
+                  </span>
+                </div>
+                <div className="dropdown-list">
+                  {availableModels.length === 0 ? (
+                    <div className="dropdown-empty">No models available</div>
+                  ) : (
+                    availableModels.map((modelOption) => (
+                      <button
+                        key={modelOption.id}
+                        className={`dropdown-item ${modelOption.id === model ? 'active' : ''}`}
+                        onClick={() => handleModelChange(modelOption.id)}
+                      >
+                        <div className="model-item-content">
+                          <div className="model-item-header">
+                            <span className="model-item-name">{modelOption.name}</span>
+                            {modelOption.id === model && <span className="check-icon">✓</span>}
+                          </div>
+                          <div className="model-item-details">
+                            <span className="model-item-description">{modelOption.description}</span>
+                            <div className="model-item-badges">
+                              {getTierBadge(modelOption.tier)}
+                              {getCostDisplay(modelOption.cost)}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Providers Tab */}
+            {activeTab === 'providers' && (
+              <div className="dropdown-content">
+                <div className="dropdown-header">
+                  <span>Change Provider</span>
+                </div>
+                <div className="dropdown-list">
+                  {availableProviders.map((providerOption) => (
+                    <button
+                      key={providerOption.id}
+                      className={`dropdown-item ${providerOption.id === provider ? 'active' : ''} ${!providerOption.configured ? 'disabled' : ''}`}
+                      onClick={() => providerOption.configured && handleProviderChange(providerOption.id)}
+                      disabled={!providerOption.configured}
+                    >
+                      <div className="provider-item-content">
+                        <div className="provider-item-header">
+                          <span className="provider-icon-large">{providerOption.icon}</span>
+                          <span className="provider-item-name">{providerOption.name}</span>
+                          {providerOption.id === provider && <span className="check-icon">✓</span>}
+                        </div>
+                        <div className="provider-item-details">
+                          <span className="provider-item-description">{providerOption.description}</span>
+                          {!providerOption.configured && providerOption.requires_api_key && (
+                            <span className="provider-status-badge not-configured">
+                              ⚠️ API key required
+                            </span>
+                          )}
+                          {providerOption.configured && (
+                            <span className="provider-status-badge configured">
+                              ✓ Configured
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from app.config import settings, LLMProvider
 from app.llm.provider import create_llm_provider
+from app.curated_models import CURATED_MODELS, PROVIDER_INFO
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ def update_settings():
 
 @bp.route('/models', methods=['GET'])
 async def get_available_models():
-    """Get available models for current or specified provider"""
+    """Get curated models for current or specified provider"""
     try:
         # Get provider from query param or use current
         provider = request.args.get('provider')
@@ -165,36 +166,63 @@ async def get_available_models():
             user_settings = load_user_settings()
             provider = user_settings.get('provider', 'gemini')
 
-        # Get appropriate API key
-        api_key = None
-        if provider == 'anthropic':
-            api_key = settings.ANTHROPIC_API_KEY
-        elif provider == 'openai':
-            api_key = settings.OPENAI_API_KEY
-        elif provider == 'gemini':
-            api_key = settings.GEMINI_API_KEY
-        elif provider == 'openrouter':
-            api_key = settings.OPENROUTER_API_KEY
-
-        # Create provider instance
-        try:
-            llm_provider = create_llm_provider(provider, api_key)
-            models = await llm_provider.get_available_models()
-
+        # Return curated models for this provider
+        if provider in CURATED_MODELS:
             return jsonify({
                 'status': 'success',
                 'provider': provider,
-                'models': models
+                'models': CURATED_MODELS[provider]['recommended']
             })
-        except Exception as e:
-            logger.error(f"Error creating provider: {e}")
+        else:
             return jsonify({
                 'status': 'error',
-                'error': f"Provider not configured: {str(e)}"
+                'error': f'Unknown provider: {provider}'
             }), 400
 
     except Exception as e:
         logger.error(f"Error getting models: {e}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@bp.route('/providers', methods=['GET'])
+def get_providers():
+    """Get available providers with their configuration status"""
+    try:
+        # Check which providers have API keys configured
+        providers = []
+        for provider_id, info in PROVIDER_INFO.items():
+            configured = False
+            
+            if provider_id == 'anthropic':
+                configured = bool(settings.ANTHROPIC_API_KEY)
+            elif provider_id == 'openai':
+                configured = bool(settings.OPENAI_API_KEY)
+            elif provider_id == 'gemini':
+                configured = bool(settings.GEMINI_API_KEY)
+            elif provider_id == 'openrouter':
+                configured = bool(settings.OPENROUTER_API_KEY)
+            elif provider_id == 'local':
+                configured = True  # Local is always available
+            
+            providers.append({
+                'id': provider_id,
+                'name': info['name'],
+                'icon': info['icon'],
+                'description': info['description'],
+                'configured': configured,
+                'requires_api_key': info['requires_api_key']
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'providers': providers
+        })
+    
+    except Exception as e:
+        logger.error(f"Error getting providers: {e}")
         return jsonify({
             'status': 'error',
             'error': str(e)
