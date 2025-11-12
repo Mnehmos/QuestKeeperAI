@@ -22,11 +22,12 @@ def create_app():
     init_db(settings.DATABASE_URL)
 
     # Register routes
-    from app.routes import character, chat, mcp, settings
+    from app.routes import character, chat, mcp
+    from app.routes import settings as settings_routes
     app.register_blueprint(character.bp)
     app.register_blueprint(chat.bp)
     app.register_blueprint(mcp.bp)
-    app.register_blueprint(settings.bp)
+    app.register_blueprint(settings_routes.bp)
 
     # Health check
     @app.route('/health')
