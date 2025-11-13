@@ -1,6 +1,43 @@
+# macOS
 .DS_Store
-mcp-gemini-desktop/node_modules
+
+# Python
 python_backend/.venv
 python_backend/.env
 python_backend/uv.lock
+python_backend/__pycache__/
+python_backend/**/__pycache__/
+python_backend/build/
+python_backend/dist/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Node.js
+mcp-gemini-desktop/node_modules/
 mcp-gemini-desktop/dist/
+mcp-gemini-desktop/release/
+package-lock.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
+.env
+.env.local
+.env.*.local
