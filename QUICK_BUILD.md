@@ -80,6 +80,22 @@ Typical installer sizes:
 
 The size includes the complete Python runtime and all dependencies, so end users don't need anything pre-installed.
 
+## Security Note
+
+When running `npm install`, you may see vulnerability warnings:
+
+```
+4 vulnerabilities (2 low, 1 moderate, 1 critical)
+```
+
+**Don't worry!** These are in development dependencies (build tools) only.
+
+✅ **Production app has 0 vulnerabilities** (verified with `npm audit --production`)
+✅ **Dev dependencies are NOT included in the final .exe**
+✅ **Safe to distribute to end users**
+
+See `SECURITY.md` for full details and how to fix them if desired.
+
 ## Troubleshooting
 
 **Build script fails?**
@@ -98,6 +114,10 @@ python --version    # Should show 3.9+
 node --version      # Should show 16+
 npm --version       # Should show 8+
 ```
+
+**npm vulnerabilities?**
+- See `SECURITY.md` - they're in dev dependencies only
+- The final .exe is secure for distribution
 
 ## For More Details
 
