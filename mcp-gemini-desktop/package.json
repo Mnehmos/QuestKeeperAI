@@ -46,7 +46,6 @@
     },
     "mac": {
       "category": "public.app-category.games",
-      "icon": "assets/icon.icns",
       "target": [
         {
           "target": "dmg",
@@ -55,7 +54,6 @@
       ]
     },
     "win": {
-      "icon": "assets/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -64,7 +62,6 @@
       ]
     },
     "linux": {
-      "icon": "assets/icon.png",
       "category": "Game",
       "target": ["AppImage"]
     },
