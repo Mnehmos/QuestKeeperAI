@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore } from '../stores/gameState';
+import { ConversationStats } from './ConversationStats';
+import { MessageSearch } from './MessageSearch';
 import './ConversationList.css';
 
 export function ConversationList() {
@@ -20,12 +22,29 @@ export function ConversationList() {
   const [showArchived, setShowArchived] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const [newConvTitle, setNewConvTitle] = useState('');
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
 
   // Load conversations on mount
   useEffect(() => {
     loadConversations(character?.id);
   }, [character?.id]);
+
+  // Load templates when modal opens
+  useEffect(() => {
+    if (showNewModal && templates.length === 0) {
+      fetch('http://localhost:5001/api/conversations/templates')
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === 'success') {
+            setTemplates(data.templates);
+          }
+        })
+        .catch(err => console.error('Failed to load templates:', err));
+    }
+  }, [showNewModal]);
 
   // Filter conversations
   const filteredConversations = conversations.filter(conv => {
@@ -48,9 +67,34 @@ export function ConversationList() {
   });
 
   const handleCreateConversation = async () => {
-    await createConversation(newConvTitle || null, character?.id);
+    if (selectedTemplate) {
+      // Create from template
+      try {
+        const response = await fetch('http://localhost:5001/api/conversations/from-template', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template_id: selectedTemplate,
+            character_id: character?.id,
+            custom_title: newConvTitle || undefined
+          })
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+          await loadConversations(character?.id);
+          await switchConversation(data.conversation.id);
+        }
+      } catch (error) {
+        console.error('Failed to create from template:', error);
+      }
+    } else {
+      // Create blank conversation
+      await createConversation(newConvTitle || null, character?.id);
+    }
+
     setShowNewModal(false);
     setNewConvTitle('');
+    setSelectedTemplate(null);
   };
 
   const handleDeleteConversation = async (convId, e) => {
@@ -63,6 +107,43 @@ export function ConversationList() {
   const handlePinConversation = async (convId, currentlyPinned, e) => {
     e.stopPropagation();
     await pinConversation(convId, !currentlyPinned);
+  };
+
+  const handleExportConversation = async (convId, format, e) => {
+    e.stopPropagation();
+    try {
+      const response = await fetch(
+        `http://localhost:5001/api/conversations/${convId}/export?format=${format}`
+      );
+
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+
+      // Get filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `conversation.${format}`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      // Create blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Failed to export conversation');
+    }
   };
 
   const formatDate = (dateString) => {
@@ -91,13 +172,22 @@ export function ConversationList() {
       {/* Header */}
       <div className="conversation-list-header">
         <h2>Conversations</h2>
-        <button
-          className="new-conversation-btn"
-          onClick={() => setShowNewModal(true)}
-          title="New Conversation"
-        >
-          ＋
-        </button>
+        <div className="header-actions">
+          <button
+            className="header-action-btn"
+            onClick={() => setShowSearchModal(true)}
+            title="Search Messages"
+          >
+            🔍
+          </button>
+          <button
+            className="new-conversation-btn"
+            onClick={() => setShowNewModal(true)}
+            title="New Conversation"
+          >
+            ＋
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -121,6 +211,9 @@ export function ConversationList() {
           Show archived
         </label>
       </div>
+
+      {/* Statistics Dashboard */}
+      <ConversationStats />
 
       {/* Error Display */}
       {conversationError && (
@@ -167,6 +260,20 @@ export function ConversationList() {
                   {conv.pinned ? '📌' : '📍'}
                 </button>
                 <button
+                  className="export-btn"
+                  onClick={(e) => handleExportConversation(conv.id, 'json', e)}
+                  title="Export as JSON"
+                >
+                  📥
+                </button>
+                <button
+                  className="export-btn"
+                  onClick={(e) => handleExportConversation(conv.id, 'markdown', e)}
+                  title="Export as Markdown"
+                >
+                  📝
+                </button>
+                <button
                   className="delete-btn"
                   onClick={(e) => handleDeleteConversation(conv.id, e)}
                   title="Delete"
@@ -193,23 +300,57 @@ export function ConversationList() {
 
       {/* New Conversation Modal */}
       {showNewModal && (
-        <div className="modal-overlay" onClick={() => setShowNewModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => {
+          setShowNewModal(false);
+          setSelectedTemplate(null);
+        }}>
+          <div className="modal-content template-modal" onClick={(e) => e.stopPropagation()}>
             <h3>New Conversation</h3>
+
+            {/* Template Selection */}
+            <div className="template-section">
+              <label>Choose a template:</label>
+              <div className="template-grid">
+                {templates.map(template => (
+                  <div
+                    key={template.id}
+                    className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedTemplate(template.id)}
+                  >
+                    <div className="template-icon">{template.icon}</div>
+                    <div className="template-name">{template.name}</div>
+                    <div className="template-description">{template.description}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Title Input */}
             <input
               type="text"
-              placeholder="Conversation title (optional)"
+              placeholder={`Title (optional${selectedTemplate ? ', uses template default' : ''})`}
               value={newConvTitle}
               onChange={(e) => setNewConvTitle(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && handleCreateConversation()}
-              autoFocus
             />
+
             <div className="modal-actions">
-              <button onClick={handleCreateConversation}>Create</button>
-              <button onClick={() => setShowNewModal(false)}>Cancel</button>
+              <button onClick={handleCreateConversation}>
+                {selectedTemplate ? 'Create from Template' : 'Create'}
+              </button>
+              <button onClick={() => {
+                setShowNewModal(false);
+                setSelectedTemplate(null);
+                setNewConvTitle('');
+              }}>Cancel</button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Message Search Modal */}
+      {showSearchModal && (
+        <MessageSearch onClose={() => setShowSearchModal(false)} />
       )}
     </div>
   );
