@@ -4,21 +4,32 @@ import { ModelSelector } from './ModelSelector';
 import './ChatInterface.css';
 
 export function ChatInterface() {
-  const messages = useGameStore((state) => state.messages);
-  const addMessage = useGameStore((state) => state.addMessage);
+  // NEW: Use conversation state instead of flat messages
+  const currentMessages = useGameStore((state) => state.currentMessages);
+  const currentConversationId = useGameStore((state) => state.currentConversationId);
+  const conversations = useGameStore((state) => state.conversations);
+  const sendMessage = useGameStore((state) => state.sendMessage);
   const addToolOutput = useGameStore((state) => state.addToolOutput);
   const character = useGameStore((state) => state.character);
+  const createConversation = useGameStore((state) => state.createConversation);
+  const updateConversationTitle = useGameStore((state) => state.updateConversationTitle);
+  const deleteConversation = useGameStore((state) => state.deleteConversation);
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState('gemini');
   const [selectedModel, setSelectedModel] = useState('');
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState('');
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
+  // Get current conversation details
+  const currentConversation = conversations.find(c => c.id === currentConversationId);
+
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [currentMessages]);
 
   useEffect(() => {
     adjustTextareaHeight();
@@ -45,74 +56,49 @@ export function ChatInterface() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = {
-      role: 'user',
-      content: input.trim(),
-      timestamp: Date.now()
-    };
-
-    addMessage(userMessage);
+    const messageText = input.trim();
     setInput('');
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:5001/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          message: input.trim(),
-          character_id: character?.id,
-          enable_tools: true,
-          provider: selectedProvider,
-          model: selectedModel
-        })
-      });
+      // NEW: Use sendMessage from store (handles conversation creation if needed)
+      const data = await sendMessage(messageText, selectedProvider, selectedModel);
 
-      const data = await response.json();
-
-      if (data.status === 'success') {
-        // Add assistant message
-        const assistantMessage = {
-          role: 'assistant',
-          content: data.reply,
-          timestamp: Date.now(),
-          execution_ms: data.execution_ms
-        };
-        addMessage(assistantMessage);
-
-        // Add tool outputs to tool output panel
-        if (data.tool_calls && data.tool_calls.length > 0) {
-          data.tool_calls.forEach(toolCall => {
-            addToolOutput({
-              ...toolCall,
-              timestamp: Date.now()
-            });
+      // Add tool outputs to tool output panel
+      if (data.tool_calls && data.tool_calls.length > 0) {
+        data.tool_calls.forEach(toolCall => {
+          addToolOutput({
+            ...toolCall,
+            timestamp: Date.now()
           });
-        }
-      } else {
-        // Error message
-        const errorMessage = {
-          role: 'system',
-          content: `Error: ${data.error}`,
-          timestamp: Date.now(),
-          isError: true
-        };
-        addMessage(errorMessage);
+        });
       }
     } catch (error) {
       console.error('Chat error:', error);
-      const errorMessage = {
-        role: 'system',
-        content: `Connection error: ${error.message}`,
-        timestamp: Date.now(),
-        isError: true
-      };
-      addMessage(errorMessage);
+      // Error is already handled in sendMessage, but show user-friendly message
+      alert(`Failed to send message: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleTitleEdit = async () => {
+    if (!currentConversation || !editedTitle.trim()) return;
+    await updateConversationTitle(currentConversationId, editedTitle.trim());
+    setIsEditingTitle(false);
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!currentConversation) return;
+    if (window.confirm(`Delete "${currentConversation.title}"? This cannot be undone.`)) {
+      await deleteConversation(currentConversationId);
+    }
+  };
+
+  const formatTokens = (tokens) => {
+    if (tokens < 1000) return tokens;
+    if (tokens < 1000000) return `${(tokens / 1000).toFixed(1)}K`;
+    return `${(tokens / 1000000).toFixed(1)}M`;
   };
 
   const handleKeyDown = (e) => {
@@ -130,10 +116,51 @@ export function ChatInterface() {
   return (
     <div className="chat-interface">
       <div className="chat-header">
+        {/* Conversation Title */}
+        {currentConversation ? (
+          <div className="conversation-header">
+            {isEditingTitle ? (
+              <input
+                type="text"
+                className="title-edit-input"
+                value={editedTitle}
+                onChange={(e) => setEditedTitle(e.target.value)}
+                onBlur={handleTitleEdit}
+                onKeyPress={(e) => e.key === 'Enter' && handleTitleEdit()}
+                autoFocus
+              />
+            ) : (
+              <h3
+                className="conversation-title"
+                onClick={() => {
+                  setEditedTitle(currentConversation.title);
+                  setIsEditingTitle(true);
+                }}
+                title="Click to edit title"
+              >
+                {currentConversation.title}
+              </h3>
+            )}
+            <div className="conversation-info">
+              <span className="token-display" title="Tokens used">
+                🎯 {formatTokens(currentConversation.total_tokens)}
+              </span>
+              <span className="message-count" title="Messages">
+                💬 {currentConversation.message_count}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="no-conversation-header">
+            <span>Select or create a conversation to start</span>
+          </div>
+        )}
+
+        {/* Model Selector */}
         <ModelSelector onModelChange={handleModelChange} />
       </div>
       <div className="chat-messages">
-        {messages.length === 0 ? (
+        {currentMessages.length === 0 ? (
           <div className="welcome-message">
             <h2>Welcome to QuestKeeperAI</h2>
             <p>Your D&D 5e AI Assistant</p>
@@ -163,9 +190,9 @@ export function ChatInterface() {
             )}
           </div>
         ) : (
-          messages.map((message, idx) => (
+          currentMessages.map((message, idx) => (
             <div
-              key={idx}
+              key={message.id || idx}
               className={`message ${message.role} ${message.isError ? 'error' : ''}`}
             >
               <div className="message-header">

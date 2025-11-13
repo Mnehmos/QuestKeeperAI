@@ -340,3 +340,65 @@
     min-width: 50px;
   }
 }
+
+/* Conversation Header Styles */
+.conversation-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  margin-right: 1rem;
+}
+
+.conversation-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.conversation-title:hover {
+  background: rgba(99, 102, 241, 0.2);
+}
+
+.title-edit-input {
+  padding: 0.25rem 0.5rem;
+  background: #2d2d44;
+  border: 1px solid #6366f1;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 500;
+  outline: none;
+}
+
+.conversation-info {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.conversation-info span {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.token-display {
+  font-variant-numeric: tabular-nums;
+}
+
+.message-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-conversation-header {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.95rem;
+  font-style: italic;
+}

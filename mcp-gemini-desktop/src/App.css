@@ -70,7 +70,7 @@
 /* Main Layout */
 .app-main {
   display: grid;
-  grid-template-columns: 350px 1fr 350px;
+  grid-template-columns: 280px 320px 1fr 320px;
   gap: var(--sp-md);
   padding: var(--sp-md);
   height: calc(100vh - 80px);
@@ -78,12 +78,18 @@
 }
 
 /* Sidebars */
+.sidebar-conversations,
 .sidebar-left,
 .sidebar-right {
   display: flex;
   flex-direction: column;
   gap: var(--sp-md);
   overflow-y: auto;
+}
+
+.sidebar-conversations {
+  width: 280px;
+  min-width: 280px;
 }
 
 .sidebar-left {
@@ -149,16 +155,19 @@
 }
 
 /* Scrollbar styling for sidebars */
+.sidebar-conversations::-webkit-scrollbar,
 .sidebar-left::-webkit-scrollbar,
 .sidebar-right::-webkit-scrollbar {
   width: 6px;
 }
 
+.sidebar-conversations::-webkit-scrollbar-track,
 .sidebar-left::-webkit-scrollbar-track,
 .sidebar-right::-webkit-scrollbar-track {
   background: var(--bg-darker);
 }
 
+.sidebar-conversations::-webkit-scrollbar-thumb,
 .sidebar-left::-webkit-scrollbar-thumb,
 .sidebar-right::-webkit-scrollbar-thumb {
   background: var(--primary);
@@ -166,18 +175,28 @@
 }
 
 /* Responsive Design */
+@media (max-width: 1600px) {
+  .app-main {
+    grid-template-columns: 260px 300px 1fr 300px;
+  }
+}
+
 @media (max-width: 1400px) {
   .app-main {
-    grid-template-columns: 300px 1fr 300px;
+    grid-template-columns: 260px 280px 1fr;
+  }
+
+  .sidebar-right {
+    display: none;
   }
 }
 
 @media (max-width: 1200px) {
   .app-main {
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 260px 1fr;
   }
 
-  .sidebar-right {
+  .sidebar-left {
     display: none;
   }
 }

@@ -4,6 +4,7 @@ import { Inventory } from './components/Inventory';
 import { QuestLog } from './components/QuestLog';
 import { ToolOutputPanel } from './components/ToolOutputPanel';
 import { ChatInterface } from './components/ChatInterface';
+import { ConversationList } from './components/ConversationList';
 import { useGameStore } from './stores/gameState';
 import './styles/global.css';
 import './App.css';
@@ -76,7 +77,12 @@ function App() {
 
       {/* Main Layout */}
       <div className="app-main">
-        {/* Left Sidebar */}
+        {/* Conversations Sidebar (Far Left) */}
+        <aside className="sidebar-conversations">
+          <ConversationList />
+        </aside>
+
+        {/* Left Sidebar - Character */}
         <aside className="sidebar-left">
           <CharacterSheet character={character} />
           <div className="sidebar-panels">
