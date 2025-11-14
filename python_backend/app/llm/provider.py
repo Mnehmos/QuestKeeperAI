@@ -395,12 +395,20 @@ class GeminiProvider(LLMProvider):
         
         # Handle thinking mode for Gemini 2.0 Flash Thinking
         thinking_mode = kwargs.get('thinking_mode', False)
-        
+
         # Convert messages to Gemini format
-        messages_formatted = [
-            {"role": msg.role, "parts": [{"text": msg.content}]}
-            for msg in messages
-        ]
+        # Gemini expects "user" and "model" roles, not "assistant"
+        messages_formatted = []
+        for msg in messages:
+            # Map role names: assistant -> model, skip system (handled separately)
+            if msg.role == "system":
+                continue  # System messages handled via system_instruction
+
+            gemini_role = "model" if msg.role == "assistant" else msg.role
+            messages_formatted.append({
+                "role": gemini_role,
+                "parts": [{"text": msg.content}]
+            })
         
         # Format tools if provided
         tools_formatted = None
