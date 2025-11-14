@@ -108,7 +108,14 @@ export const useGameStore = create(
 
       // Switch to different conversation
       switchConversation: async (conversationId) => {
-        set({ conversationsLoading: true, conversationError: null });
+        // CRITICAL: Clear messages immediately to prevent showing stale data
+        set({
+          currentMessages: [],
+          currentConversationId: null,
+          conversationsLoading: true,
+          conversationError: null
+        });
+
         try {
           const response = await fetch(
             `http://localhost:5001/api/conversations/${conversationId}?include_messages=true&message_limit=100`
@@ -116,6 +123,7 @@ export const useGameStore = create(
           const data = await response.json();
 
           if (data.status === 'success') {
+            console.log(`Switched to conversation ${conversationId}, loaded ${data.messages?.length || 0} messages`);
             set({
               currentConversationId: conversationId,
               currentMessages: data.messages || [],
@@ -128,14 +136,21 @@ export const useGameStore = create(
           console.error('Error switching conversation:', error);
           set({
             conversationError: error.message,
-            conversationsLoading: false
+            conversationsLoading: false,
+            currentMessages: [] // Keep messages cleared on error
           });
         }
       },
 
       // Create new conversation
       createConversation: async (title = null, characterId = null) => {
-        set({ conversationsLoading: true, conversationError: null });
+        // CRITICAL: Clear messages when creating new conversation
+        set({
+          currentMessages: [],
+          conversationsLoading: true,
+          conversationError: null
+        });
+
         try {
           const response = await fetch('http://localhost:5001/api/conversations', {
             method: 'POST',
@@ -148,11 +163,12 @@ export const useGameStore = create(
           const data = await response.json();
 
           if (data.status === 'success') {
-            // Add to list and switch to it
+            console.log(`Created new conversation ${data.conversation.id}: ${data.conversation.title}`);
+            // Add to list and switch to it with empty messages
             set((state) => ({
               conversations: [data.conversation, ...state.conversations],
               currentConversationId: data.conversation.id,
-              currentMessages: [],
+              currentMessages: [], // Ensure messages start empty
               conversationsLoading: false
             }));
             return data.conversation.id;
@@ -163,7 +179,8 @@ export const useGameStore = create(
           console.error('Error creating conversation:', error);
           set({
             conversationError: error.message,
-            conversationsLoading: false
+            conversationsLoading: false,
+            currentMessages: [] // Keep messages cleared on error
           });
           return null;
         }
@@ -172,6 +189,8 @@ export const useGameStore = create(
       // Send message in current conversation
       sendMessage: async (message, provider = null, model = null) => {
         const { currentConversationId, character } = get();
+
+        console.log(`Sending message to conversation: ${currentConversationId || '(creating new)'}`);
 
         // Optimistically add user message
         const userMsg = {
@@ -200,6 +219,8 @@ export const useGameStore = create(
           const data = await response.json();
 
           if (data.status === 'success') {
+            console.log(`Message sent successfully to conversation: ${data.conversation_id}`);
+
             // Replace temp user message and add assistant response
             const assistantMsg = {
               id: data.message_id,
