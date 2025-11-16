@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameStore } from '../stores/gameState';
+import { marked } from 'marked';
 import './ChatInterface.css';
+
+// Configure marked options
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+  headerIds: false,
+  mangle: false
+});
 
 export function ChatInterface() {
   const messages = useGameStore((state) => state.messages);
@@ -117,6 +126,15 @@ export function ChatInterface() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const renderMarkdown = (content) => {
+    try {
+      return { __html: marked.parse(content) };
+    } catch (error) {
+      console.error('Markdown parsing error:', error);
+      return { __html: content };
+    }
+  };
+
   return (
     <div className="chat-interface">
       <div className="chat-messages">
@@ -165,7 +183,11 @@ export function ChatInterface() {
                 </span>
               </div>
               <div className="message-content">
-                {message.content}
+                {message.role === 'assistant' ? (
+                  <div dangerouslySetInnerHTML={renderMarkdown(message.content)} />
+                ) : (
+                  message.content
+                )}
               </div>
               {message.execution_ms && (
                 <div className="message-meta">
