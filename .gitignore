@@ -26,5 +26,9 @@ dist-ssr
 # Tauri
 src-tauri/target/
 src-tauri/gen/
+
+# Rust experiment (not part of main codebase)
+rust-mcp-server/
+
 Roo-Code
 Lightweight-CRM---Invoice/
