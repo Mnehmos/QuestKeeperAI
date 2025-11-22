@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-terminal-black text-terminal-green font-mono overflow-hidden;
+  }
+}
+
+@layer components {
+  .scanline {
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0),
+      rgba(255, 255, 255, 0) 50%,
+      rgba(0, 0, 0, 0.2) 50%,
+      rgba(0, 0, 0, 0.2)
+    );
+    background-size: 100% 4px;
+    pointer-events: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+  }
+
+  .markdown-content pre {
+    @apply bg-terminal-black/80 border border-terminal-green-dim rounded p-3 my-2 overflow-x-auto;
+  }
+
+  .markdown-content code {
+    @apply font-mono text-sm;
+  }
+
+  .markdown-content table {
+    @apply border-collapse border border-terminal-green-dim my-2;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    @apply border border-terminal-green-dim px-3 py-1;
+  }
+
+  .markdown-content th {
+    @apply bg-terminal-black/50 font-bold;
+  }
+
+  .markdown-content a {
+    @apply text-terminal-cyan underline hover:text-terminal-amber transition-colors;
+  }
+
+  .markdown-content hr {
+    @apply border-terminal-green-dim my-4;
+  }
+}

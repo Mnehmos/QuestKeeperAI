@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "shell:allow-execute",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/rpg-game-state-server",
+          "sidecar": true
+        },
+        {
+          "name": "binaries/rpg-combat-engine-server",
+          "sidecar": true
+        }
+      ]
+    },
+    "shell:default",
+    "shell:allow-stdin-write"
+  ]
+}
