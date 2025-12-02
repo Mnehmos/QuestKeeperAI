@@ -11,6 +11,16 @@ Quest Keeper AI is a desktop RPG companion that combines an **AI Dungeon Master*
 
 ---
 
+## Core Documentation
+
+| Document | Description |
+|----------|-------------|
+| [PROJECT_VISION.md](docs/PROJECT_VISION.md) | Product vision, target personas, design principles |
+| [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) | Strategic roadmap, phases, and priorities |
+| [TASK_MAP.md](docs/TASK_MAP.md) | Detailed task breakdown with dependencies and estimates |
+
+---
+
 ## ✨ Key Features
 
 | Feature | Description |
