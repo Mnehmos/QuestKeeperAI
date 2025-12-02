@@ -2,8 +2,11 @@ import React, { useCallback, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import { formatToolResponse } from '../../utils/toolResponseFormatter';
+import { formatToolResponseWithVisualization } from '../../utils/toolResponseFormatter';
 import { CensorBlock } from './CensorBlock';
+import { WorldVisualization } from '../visualizers/WorldVisualization';
+import { NationCard } from '../visualizers/NationCard';
+import { RegionCard } from '../visualizers/RegionCard';
 
 interface ToolCallDisplayProps {
     toolName: string;
@@ -26,19 +29,19 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
     const remarkPlugins = useMemo(() => [remarkGfm], []);
     const rehypePlugins = useMemo(() => [rehypeHighlight], []);
 
-    const formattedResponse = useMemo(() => {
-        if (!response) return '';
+    // Parse response and get both markdown and visualization data
+    const formattedResult = useMemo(() => {
+        if (!response) return { markdown: '', visualization: undefined };
 
         try {
-            // Use the beautiful formatter
-            const formatted = formatToolResponse(toolName, response);
-            return formatted;
+            // Use the enhanced formatter that returns both markdown and visualization data
+            return formatToolResponseWithVisualization(toolName, response);
         } catch (e) {
             // Fallback to original parsing
             try {
                 const parsed = JSON.parse(response);
                 let content = '';
-                
+
                 if (parsed.content && Array.isArray(parsed.content)) {
                     content = parsed.content
                         .map((c: any) => c.type === 'text' ? c.text : '')
@@ -47,12 +50,46 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                     content = JSON.stringify(parsed, null, 2);
                 }
 
-                return content.replace(/\uFFFD/g, '=');
+                return { markdown: content.replace(/\uFFFD/g, '='), visualization: undefined };
             } catch (e2) {
-                return response.replace(/\uFFFD/g, '=');
+                return { markdown: response.replace(/\uFFFD/g, '='), visualization: undefined };
             }
         }
     }, [response, toolName]);
+
+    const formattedResponse = formattedResult.markdown;
+    const visualization = formattedResult.visualization;
+
+    // Render visualization component based on type
+    const renderVisualization = useCallback(() => {
+        if (!visualization) return null;
+
+        switch (visualization.type) {
+            case 'world':
+            case 'world_overview':
+                return <WorldVisualization data={visualization.data} variant="full" />;
+            case 'nation':
+                return <NationCard data={visualization.data} variant="full" />;
+            case 'region':
+            case 'region_detail':
+                return <RegionCard data={visualization.data} variant="full" />;
+            case 'strategy_state':
+                // Strategy state has both nations and regions
+                return (
+                    <div className="space-y-4">
+                        {visualization.data.nations?.length > 0 && (
+                            <div className="grid grid-cols-1 gap-3">
+                                {visualization.data.nations.map((nation: any, idx: number) => (
+                                    <NationCard key={nation.id || idx} data={nation} variant="compact" />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            default:
+                return null;
+        }
+    }, [visualization]);
 
     const segments = useMemo(() => {
         if (!formattedResponse) return [];
@@ -164,10 +201,23 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                                 <span className={`codicon codicon-chevron-${showResponse ? 'down' : 'right'} text-xs`} />
                                 <span className="text-sm font-bold uppercase tracking-wider text-terminal-green">
                                     Response
+                                    {visualization && (
+                                        <span className="ml-2 text-xs text-terminal-cyan font-normal">
+                                            [Rich View]
+                                        </span>
+                                    )}
                                 </span>
                             </div>
                             {showResponse && (
                                 <div className="ml-4 mt-2 space-y-3">
+                                    {/* Rich Visualization Component (if available) */}
+                                    {visualization && (
+                                        <div className="mb-4">
+                                            {renderVisualization()}
+                                        </div>
+                                    )}
+
+                                    {/* Markdown Content */}
                                     {segments.map((segment, index) =>
                                         segment.type === 'censor' ? (
                                             <CensorBlock

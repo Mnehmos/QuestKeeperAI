@@ -60,3 +60,130 @@
     @apply border-terminal-green-dim my-4;
   }
 }
+
+/* ============================================
+   STREAMING PERFORMANCE OPTIMIZATIONS
+   ============================================ */
+
+/* Streaming cursor animation */
+.streaming-cursor {
+  animation: blink 0.7s infinite;
+  color: var(--terminal-green, #00ff41);
+  display: inline-block;
+  margin-left: 1px;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Streaming text container - optimized for frequent updates */
+.streaming-text {
+  font-family: inherit;
+  line-height: 1.6;
+  /* Isolate layout calculations to this element */
+  contain: layout style;
+  /* GPU acceleration for smooth text rendering */
+  transform: translateZ(0);
+  /* Prevent text from causing layout shifts */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Chat messages container - performance optimizations */
+.chat-messages-container {
+  /* Strict containment for scroll performance */
+  contain: strict;
+  /* Use compositor for scrolling */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Smooth native scrolling */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Individual message optimization */
+.chat-message {
+  /* Content containment for layout isolation */
+  contain: content;
+}
+
+/* GPU-accelerated smooth transitions */
+.smooth-transition {
+  transition: all 0.15s ease-out;
+  will-change: transform, opacity;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .streaming-cursor {
+    animation: none;
+    opacity: 1;
+  }
+  
+  .smooth-transition {
+    transition: none;
+  }
+}
+
+/* ============================================
+   MARKDOWN CONTENT STABILITY
+   ============================================ */
+
+/* Prevent layout shifts when markdown content renders */
+.markdown-content {
+  /* Minimum line height to prevent jumps */
+  min-height: 1.6em;
+  /* Smooth font rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Code blocks - fixed height prevents jumps */
+.markdown-content pre {
+  min-height: 2.5em;
+  /* Prevent horizontal scroll from causing layout shifts */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Tables - set minimum widths to prevent reflow */
+.markdown-content table {
+  table-layout: auto;
+  min-width: fit-content;
+}
+
+.markdown-content th,
+.markdown-content td {
+  min-width: 3em;
+  white-space: nowrap;
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+
+/* Custom scrollbar for chat area */
+.chat-messages-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-messages-container::-webkit-scrollbar-track {
+  background: rgba(0, 255, 65, 0.05);
+  border-radius: 4px;
+}
+
+.chat-messages-container::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 65, 0.3);
+  border-radius: 4px;
+}
+
+.chat-messages-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 65, 0.5);
+}
+
+/* Firefox scrollbar */
+.chat-messages-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 255, 65, 0.3) rgba(0, 255, 65, 0.05);
+}

@@ -10,7 +10,7 @@ export const WorldStateView: React.FC = () => {
   // Safety check - return loading state if world is undefined
   if (!world) {
     return (
-      <div className="h-full flex items-center justify-center font-mono text-terminal-green">
+      <div className="h-full w-full flex items-center justify-center font-mono text-terminal-green">
         <div className="text-center">
           <div className="text-xl mb-2">⚠️ Loading World State...</div>
           <button
@@ -51,7 +51,7 @@ export const WorldStateView: React.FC = () => {
   const eventCount = world.events ? Object.keys(world.events).length : 0;
 
   return (
-    <div className="h-full flex flex-col p-4 font-mono text-terminal-green overflow-hidden">
+    <div className="h-full w-full flex flex-col p-4 font-mono text-terminal-green overflow-hidden">
       <div className="flex justify-between items-center mb-4 border-b border-terminal-green-dim pb-2 flex-shrink-0">
         <h2 className="text-xl font-bold uppercase tracking-wider text-glow">
           World State Matrix
@@ -170,7 +170,7 @@ export const WorldStateView: React.FC = () => {
                 </div>
               </div>
             )}
-            {env.hazards && env.hazards.length > 0 && (
+            {env.hazards && Array.isArray(env.hazards) && env.hazards.length > 0 && (
               <div className="mt-3 pt-3 border-t border-terminal-green-dim/30">
                 <div className="text-xs text-terminal-green/60 uppercase mb-2 flex items-center gap-1">
                   <span>⚠️</span> Hazards
@@ -179,7 +179,7 @@ export const WorldStateView: React.FC = () => {
                   {env.hazards.map((hazard: string, idx: number) => (
                     <li key={idx} className="text-sm text-yellow-400 flex items-start gap-2">
                       <span>⚠️</span>
-                      <span>{hazard}</span>
+                      <span>{typeof hazard === 'string' ? hazard : String(hazard)}</span>
                     </li>
                   ))}
                 </ul>

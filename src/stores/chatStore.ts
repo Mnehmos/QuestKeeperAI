@@ -48,7 +48,7 @@ interface ChatState {
   clearHistory: () => void; // Clears current session history
   setTyping: (isTyping: boolean) => void;
 
-  // Streaming support methods
+  // Streaming support methods - optimized for batched updates
   startStreamingMessage: (id: string, sender: MessageSender) => void;
   updateStreamingMessage: (id: string, content?: string, toolCall?: { id: string; name: string; arguments: Record<string, any> }) => void;
   updateToolStatus: (id: string, status: 'pending' | 'completed' | 'error', response?: string) => void;
@@ -58,6 +58,10 @@ interface ChatState {
   getCurrentSession: () => ChatSession | undefined;
   getMessages: () => Message[];
 }
+
+// Batching utilities for streaming updates
+let pendingUpdate: { id: string; content: string } | null = null;
+let rafId: number | null = null;
 
 export const useChatStore = create<ChatState>()(
   persist(
@@ -168,16 +172,23 @@ export const useChatStore = create<ChatState>()(
 
       startStreamingMessage: (id, sender) =>
         set((state) => {
-           // Ensure session exists (similar logic to addMessage)
-           let sessions = state.sessions;
-           let currentSessionId = state.currentSessionId;
-           
-           if (!currentSessionId || sessions.length === 0) {
-             // Should have been created by user message, but just in case
-             return state; 
-           }
+          // Ensure session exists (similar logic to addMessage)
+          let sessions = state.sessions;
+          let currentSessionId = state.currentSessionId;
+          
+          if (!currentSessionId || sessions.length === 0) {
+            // Should have been created by user message, but just in case
+            return state; 
+          }
 
-           return {
+          // Clear any pending batched updates
+          pendingUpdate = null;
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+
+          return {
             streamingMessageId: id,
             sessions: sessions.map((s) =>
               s.id === currentSessionId
@@ -200,36 +211,67 @@ export const useChatStore = create<ChatState>()(
           };
         }),
 
-      updateStreamingMessage: (id, content, toolCall) =>
-        set((state) => ({
-          sessions: state.sessions.map((s) =>
-            s.id === state.currentSessionId
-              ? {
-                  ...s,
-                  messages: s.messages.map((msg) =>
-                    msg.id === id
+      // Optimized streaming update - batches content updates to reduce re-renders
+      updateStreamingMessage: (id, content, toolCall) => {
+        // For tool calls, update immediately
+        if (toolCall) {
+          set((state) => ({
+            sessions: state.sessions.map((s) =>
+              s.id === state.currentSessionId
+                ? {
+                    ...s,
+                    messages: s.messages.map((msg) =>
+                      msg.id === id
+                        ? {
+                            ...msg,
+                            isToolCall: true,
+                            toolCallId: toolCall.id,
+                            toolName: toolCall.name,
+                            toolArguments: toolCall.arguments,
+                            toolStatus: 'pending',
+                            serverName: toolCall.name.startsWith('game')
+                              ? 'game-state-server'
+                              : 'combat-engine-server',
+                          }
+                        : msg
+                    ),
+                  }
+                : s
+            ),
+          }));
+          return;
+        }
+
+        // For content updates, batch using RAF
+        if (content !== undefined) {
+          pendingUpdate = { id, content };
+          
+          if (rafId === null) {
+            rafId = requestAnimationFrame(() => {
+              rafId = null;
+              const update = pendingUpdate;
+              pendingUpdate = null;
+              
+              if (update) {
+                set((state) => ({
+                  sessions: state.sessions.map((s) =>
+                    s.id === state.currentSessionId
                       ? {
-                          ...msg,
-                          content: content !== undefined ? content : msg.content,
-                          ...(toolCall
-                            ? {
-                                isToolCall: true,
-                                toolCallId: toolCall.id,
-                                toolName: toolCall.name,
-                                toolArguments: toolCall.arguments,
-                                toolStatus: 'pending',
-                                serverName: toolCall.name.startsWith('game')
-                                  ? 'game-state-server'
-                                  : 'combat-engine-server',
-                              }
-                            : {}),
+                          ...s,
+                          messages: s.messages.map((msg) =>
+                            msg.id === update.id
+                              ? { ...msg, content: update.content }
+                              : msg
+                          ),
                         }
-                      : msg
+                      : s
                   ),
-                }
-              : s
-          ),
-        })),
+                }));
+              }
+            });
+          }
+        }
+      },
 
       updateToolStatus: (id, status, response) =>
         set((state) => ({
@@ -251,20 +293,38 @@ export const useChatStore = create<ChatState>()(
           ),
         })),
 
-      finalizeStreamingMessage: (id) =>
+      finalizeStreamingMessage: (id) => {
+        // Flush any pending updates before finalizing
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        
+        // Apply any pending content
+        const update = pendingUpdate;
+        pendingUpdate = null;
+
         set((state) => ({
           sessions: state.sessions.map((s) =>
             s.id === state.currentSessionId
               ? {
                   ...s,
                   messages: s.messages.map((msg) =>
-                    msg.id === id ? { ...msg, partial: false } : msg
+                    msg.id === id
+                      ? { 
+                          ...msg, 
+                          partial: false,
+                          // Apply pending content if any
+                          ...(update && update.id === id ? { content: update.content } : {})
+                        }
+                      : msg
                   ),
                 }
               : s
           ),
           streamingMessageId: null,
-        })),
+        }));
+      },
     }),
     {
       name: 'chat-storage',

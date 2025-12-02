@@ -2,7 +2,7 @@ import React from 'react';
 import { useUIStore } from '../../stores/uiStore';
 import { AdventureView } from '../adventure/AdventureView';
 import { BattlemapCanvas } from '../viewport/BattlemapCanvas';
-import { WorldStateView } from '../viewport/WorldStateView';
+import { WorldMapCanvas } from '../viewport/WorldMapCanvas';
 import { NotesView } from '../viewport/NotesView';
 import { CharacterSheetView } from '../viewport/CharacterSheetView';
 import { SettingsView } from '../viewport/SettingsView';
@@ -23,7 +23,7 @@ export const MainViewport: React.FC<MainViewportProps> = ({ className }) => {
       case 'character':
         return <CharacterSheetView />;
       case 'map':
-        return <WorldStateView />;
+        return <WorldMapCanvas />;
       case 'journal':
         return <NotesView />;
       case 'settings':

@@ -1,6 +1,26 @@
 /**
  * Format MCP tool responses into beautiful markdown
+ * Now also supports returning structured data for rich visualizations
  */
+
+// Visualization type indicators for components
+export type VisualizationType =
+    | 'world'
+    | 'world_overview'
+    | 'nation'
+    | 'nation_list'
+    | 'region'
+    | 'region_detail'
+    | 'strategy_state'
+    | null;
+
+export interface FormattedResponse {
+    markdown: string;
+    visualization?: {
+        type: VisualizationType;
+        data: any;
+    };
+}
 
 interface Character {
     id: string;
@@ -465,6 +485,345 @@ export function formatUseItem(data: any): string {
     return markdown;
 }
 
+// ============================================================================
+// WORLD VISUALIZATION FORMATTERS
+// ============================================================================
+
+/**
+ * Format world data (from get_world, create_world, list_worlds)
+ */
+export function formatWorld(data: any): FormattedResponse {
+    const world = data.world || data;
+
+    let markdown = `## 🌍 ${world.name || 'World'}\n\n`;
+
+    if (world.seed) markdown += `**Seed:** \`${world.seed}\`\n`;
+    if (world.width && world.height) markdown += `**Size:** ${world.width}×${world.height}\n`;
+    if (world.id) markdown += `**ID:** \`${world.id.substring(0, 12)}...\`\n`;
+
+    markdown += `\n`;
+
+    // Environment info
+    if (world.environment) {
+        const env = world.environment;
+        markdown += `### 🌤️ Environment\n\n`;
+        if (env.timeOfDay || env.time_of_day) markdown += `- **Time:** ${env.timeOfDay || env.time_of_day}\n`;
+        if (env.weather || env.weatherConditions) markdown += `- **Weather:** ${env.weather || env.weatherConditions}\n`;
+        if (env.season) markdown += `- **Season:** ${typeof env.season === 'string' ? env.season : env.season.current}\n`;
+        if (env.temperature) markdown += `- **Temperature:** ${typeof env.temperature === 'string' ? env.temperature : env.temperature.current}\n`;
+        if (env.moonPhase || env.moon_phase) markdown += `- **Moon:** ${env.moonPhase || env.moon_phase}\n`;
+        markdown += `\n`;
+    }
+
+    return {
+        markdown,
+        visualization: {
+            type: 'world',
+            data: world
+        }
+    };
+}
+
+/**
+ * Format world list (from list_worlds)
+ */
+export function formatWorldList(data: any): FormattedResponse {
+    const worlds = data.worlds || [];
+    const count = data.count ?? worlds.length;
+
+    let markdown = `## 🌍 Worlds (${count})\n\n`;
+
+    if (worlds.length === 0) {
+        markdown += `> No worlds found. Create one with \`generate_world\` or \`create_world\`.\n`;
+        return { markdown };
+    }
+
+    markdown += `| Name | Size | Seed | ID |\n`;
+    markdown += `|------|------|------|----|\n`;
+
+    worlds.forEach((world: any) => {
+        const name = world.name || 'Unnamed';
+        const size = world.width && world.height ? `${world.width}×${world.height}` : 'N/A';
+        const seed = world.seed || 'N/A';
+        const id = world.id?.substring(0, 8) || 'N/A';
+        markdown += `| ${name} | ${size} | \`${seed}\` | \`${id}...\` |\n`;
+    });
+
+    markdown += `\n`;
+
+    return {
+        markdown,
+        visualization: worlds.length === 1 ? { type: 'world', data: worlds[0] } : undefined
+    };
+}
+
+/**
+ * Format world map overview (from get_world_map_overview)
+ */
+export function formatWorldMapOverview(data: any): FormattedResponse {
+    let markdown = `## 🗺️ World Map Overview\n\n`;
+
+    if (data.seed) markdown += `**Seed:** \`${data.seed}\`\n`;
+    if (data.dimensions) {
+        markdown += `**Dimensions:** ${data.dimensions.width}×${data.dimensions.height}\n`;
+    }
+    markdown += `\n`;
+
+    // Biome distribution
+    if (data.biomeDistribution) {
+        markdown += `### 🌿 Biome Distribution\n\n`;
+        const sorted = Object.entries(data.biomeDistribution)
+            .sort(([, a], [, b]) => (b as number) - (a as number));
+
+        markdown += `| Biome | Coverage |\n`;
+        markdown += `|-------|----------|\n`;
+        sorted.forEach(([biome, pct]) => {
+            const bar = '█'.repeat(Math.round((pct as number) / 5)) + '░'.repeat(20 - Math.round((pct as number) / 5));
+            markdown += `| ${biome.replace(/_/g, ' ')} | ${bar} ${pct}% |\n`;
+        });
+        markdown += `\n`;
+    }
+
+    // Stats
+    markdown += `### 📊 Statistics\n\n`;
+    if (data.regionCount !== undefined) markdown += `- **Regions:** ${data.regionCount}\n`;
+    if (data.structureCount !== undefined) markdown += `- **Structures:** ${data.structureCount}\n`;
+    if (data.riverTileCount !== undefined) markdown += `- **River Tiles:** ${data.riverTileCount}\n`;
+
+    return {
+        markdown,
+        visualization: {
+            type: 'world_overview',
+            data
+        }
+    };
+}
+
+/**
+ * Format region data (from get_region_map)
+ */
+export function formatRegion(data: any): FormattedResponse {
+    const region = data.region || data;
+
+    let markdown = `## 📍 ${region.name}\n\n`;
+
+    markdown += `**Type:** ${region.type}\n`;
+    if (region.dominantBiome) markdown += `**Biome:** ${region.dominantBiome.replace(/_/g, ' ')}\n`;
+    if (region.capitalX !== undefined && region.capitalY !== undefined) {
+        markdown += `**Capital:** (${region.capitalX}, ${region.capitalY})\n`;
+    }
+    markdown += `\n`;
+
+    // Structures in region
+    if (data.structures && data.structures.length > 0) {
+        markdown += `### 🏗️ Structures (${data.structures.length})\n\n`;
+        data.structures.forEach((s: any) => {
+            const icon = getStructureIcon(s.type);
+            const x = s.x ?? s.location?.x;
+            const y = s.y ?? s.location?.y;
+            markdown += `- ${icon} **${s.name}** (${s.type}) at (${x}, ${y})`;
+            if (s.population) markdown += ` - Pop: ${s.population.toLocaleString()}`;
+            markdown += `\n`;
+        });
+        markdown += `\n`;
+    }
+
+    if (data.tileCount) {
+        markdown += `**Area:** ${data.tileCount} tiles\n`;
+    }
+
+    return {
+        markdown,
+        visualization: {
+            type: 'region_detail',
+            data
+        }
+    };
+}
+
+/**
+ * Format nation data (from get_nation_state, create_nation)
+ */
+export function formatNation(data: any): FormattedResponse {
+    const nation = data.nation || data;
+
+    const ideologyIcons: Record<string, string> = {
+        democracy: '🗳️',
+        autocracy: '👑',
+        theocracy: '⛪',
+        tribal: '🏕️'
+    };
+
+    let markdown = `## ${ideologyIcons[nation.ideology] || '🏴'} ${nation.name}\n\n`;
+
+    markdown += `**Leader:** ${nation.leader}\n`;
+    markdown += `**Ideology:** ${nation.ideology}\n`;
+    markdown += `**GDP:** $${nation.gdp?.toLocaleString() || 0}\n\n`;
+
+    // Personality traits
+    markdown += `### 🧠 Personality\n\n`;
+    markdown += `| Trait | Value |\n`;
+    markdown += `|-------|-------|\n`;
+    markdown += `| ⚔️ Aggression | ${nation.aggression}/100 |\n`;
+    markdown += `| 🤝 Trust | ${nation.trust}/100 |\n`;
+    markdown += `| 👁️ Paranoia | ${nation.paranoia}/100 |\n`;
+    markdown += `\n`;
+
+    // Resources
+    if (nation.resources) {
+        markdown += `### 📦 Resources\n\n`;
+        markdown += `- 🌾 Food: **${nation.resources.food}**\n`;
+        markdown += `- ⚙️ Metal: **${nation.resources.metal}**\n`;
+        markdown += `- 🛢️ Oil: **${nation.resources.oil}**\n`;
+        markdown += `\n`;
+    }
+
+    // Public intent
+    if (nation.publicIntent) {
+        markdown += `### 📢 Declaration\n\n`;
+        markdown += `> *"${nation.publicIntent}"*\n\n`;
+    }
+
+    // Relations
+    if (nation.relations && Object.keys(nation.relations).length > 0) {
+        markdown += `### 🤝 Relations\n\n`;
+        for (const [id, rel] of Object.entries(nation.relations) as [string, any][]) {
+            const status = rel.alliance ? '🤝 Allied' : rel.truceUntil ? '⚖️ Truce' : '—';
+            const opinion = rel.opinion > 0 ? `+${rel.opinion}` : rel.opinion;
+            markdown += `- **${id.substring(0, 8)}...**: ${opinion} (${status})\n`;
+        }
+        markdown += `\n`;
+    }
+
+    return {
+        markdown,
+        visualization: {
+            type: 'nation',
+            data: nation
+        }
+    };
+}
+
+/**
+ * Format strategy state (from get_strategy_state - with Fog of War)
+ */
+export function formatStrategyState(data: any): FormattedResponse {
+    let markdown = `## ⚔️ Grand Strategy View\n\n`;
+
+    const nations = data.nations || [];
+    const regions = data.regions || [];
+
+    if (nations.length > 0) {
+        markdown += `### 🏴 Nations (${nations.length})\n\n`;
+        nations.forEach((n: any) => {
+            const ideologyIcons: Record<string, string> = {
+                democracy: '🗳️',
+                autocracy: '👑',
+                theocracy: '⛪',
+                tribal: '🏕️'
+            };
+            markdown += `- ${ideologyIcons[n.ideology] || '🏴'} **${n.name}** (${n.leader}) - GDP: $${n.gdp?.toLocaleString() || '???'}\n`;
+        });
+        markdown += `\n`;
+    }
+
+    if (regions.length > 0) {
+        markdown += `### 📍 Regions (${regions.length})\n\n`;
+        const byOwner: Record<string, any[]> = {};
+        regions.forEach((r: any) => {
+            const owner = r.ownerNationId || 'Unclaimed';
+            if (!byOwner[owner]) byOwner[owner] = [];
+            byOwner[owner].push(r);
+        });
+
+        for (const [owner, regs] of Object.entries(byOwner)) {
+            const ownerLabel = owner === 'Unclaimed' ? '🏳️ Unclaimed' : `🏴 ${owner.substring(0, 8)}...`;
+            markdown += `**${ownerLabel}** (${regs.length} regions)\n`;
+            regs.slice(0, 5).forEach((r: any) => {
+                markdown += `  - ${r.name} (${r.type})\n`;
+            });
+            if (regs.length > 5) markdown += `  - ...and ${regs.length - 5} more\n`;
+            markdown += `\n`;
+        }
+    }
+
+    return {
+        markdown,
+        visualization: {
+            type: 'strategy_state',
+            data
+        }
+    };
+}
+
+/**
+ * Helper: Get structure icon
+ */
+function getStructureIcon(type: string): string {
+    const icons: Record<string, string> = {
+        city: '🏙️',
+        town: '🏘️',
+        village: '🏠',
+        castle: '🏰',
+        ruins: '🏚️',
+        dungeon: '⚔️',
+        temple: '⛪',
+    };
+    return icons[type?.toLowerCase()] || '🏛️';
+}
+
+/**
+ * Auto-detect response type and format accordingly
+ * Returns FormattedResponse with both markdown and optional visualization data
+ */
+export function formatToolResponseWithVisualization(toolName: string, response: any): FormattedResponse {
+    try {
+        // Parse if string
+        const data = typeof response === 'string' ? JSON.parse(response) : response;
+
+        // Extract from MCP wrapper if present
+        const actualData = data.content?.[0]?.text
+            ? JSON.parse(data.content[0].text)
+            : data;
+
+        // World tools - return rich visualization data
+        if (toolName === 'list_worlds' || actualData.worlds) {
+            return formatWorldList(actualData);
+        }
+
+        if (toolName === 'get_world' || toolName === 'create_world' ||
+            (actualData.name && actualData.seed && actualData.width)) {
+            return formatWorld(actualData);
+        }
+
+        if (toolName === 'get_world_map_overview' || actualData.biomeDistribution) {
+            return formatWorldMapOverview(actualData);
+        }
+
+        if (toolName === 'get_region_map' || (actualData.region && actualData.tiles)) {
+            return formatRegion(actualData);
+        }
+
+        // Nation/Strategy tools
+        if (toolName === 'create_nation' || toolName === 'get_nation_state' ||
+            (actualData.name && actualData.ideology && actualData.gdp !== undefined)) {
+            return formatNation(actualData);
+        }
+
+        if (toolName === 'get_strategy_state' || (actualData.nations && actualData.regions)) {
+            return formatStrategyState(actualData);
+        }
+
+        // Fall back to existing formatters
+        const markdown = formatToolResponse(toolName, response);
+        return { markdown };
+
+    } catch (e) {
+        const markdown = typeof response === 'string' ? response : JSON.stringify(response, null, 2);
+        return { markdown };
+    }
+}
+
 /**
  * Auto-detect response type and format accordingly
  */
@@ -526,9 +885,46 @@ export function formatToolResponse(toolName: string, response: any): string {
             return formatEncounter(actualData);
         }
 
+        // Secret Keeper tools - redact sensitive information
+        if (toolName === 'create_secret' || (actualData.secret && actualData.warning)) {
+            return formatCreateSecret(actualData);
+        }
+
+        if (toolName === 'get_secret' || (actualData.secretDescription && !actualData.secrets)) {
+            return formatGetSecret(actualData);
+        }
+
+        if (toolName === 'list_secrets' || actualData.secretsByType) {
+            return formatListSecrets(actualData);
+        }
+
+        if (toolName === 'get_secrets_for_context' || actualData.context?.includes('DO NOT REVEAL')) {
+            return formatSecretsForContext(actualData);
+        }
+
+        if (toolName === 'check_for_leaks' || actualData.leaks !== undefined) {
+            return formatCheckForLeaks(actualData);
+        }
+
+        if (toolName === 'check_reveal_conditions' || actualData.secretsToReveal) {
+            return formatCheckRevealConditions(actualData);
+        }
+
+        if (toolName === 'reveal_secret' || actualData.spoilerMarkdown || actualData.message?.includes('revealed')) {
+            return formatRevealSecret(actualData);
+        }
+
+        if (toolName === 'update_secret' && actualData.secret) {
+            return formatUpdateSecret(actualData);
+        }
+
+        if (toolName === 'delete_secret') {
+            return formatDeleteSecret(actualData);
+        }
+
         // Fallback: pretty-print JSON
         return `\`\`\`json\n${JSON.stringify(actualData, null, 2)}\n\`\`\``;
-        
+
     } catch (e) {
         // If parsing fails, return as-is
         return typeof response === 'string' ? response : JSON.stringify(response, null, 2);
@@ -576,4 +972,289 @@ function guessItemName(itemId: string): string {
     }
 
     return `Item ${prefix}`;
+}
+
+// ============================================================================
+// SECRET KEEPER FORMATTERS - Redact sensitive information from tool responses
+// ============================================================================
+
+/**
+ * Format create_secret response - hide the actual secret content
+ */
+export function formatCreateSecret(data: any): string {
+    const secret = data.secret || data;
+
+    let markdown = `## 🔒 Secret Created\n\n`;
+    markdown += `**Name:** ${secret.name}\n`;
+    markdown += `**Type:** ${secret.type} (${secret.category || 'general'})\n`;
+    markdown += `**Sensitivity:** ${secret.sensitivity?.toUpperCase() || 'MEDIUM'}\n\n`;
+
+    markdown += `> Secret registered successfully. Hidden from player view.\n\n`;
+
+    // Censor the actual secret content
+    markdown += `[censor]`;
+    markdown += `ID: ${secret.id}\n`;
+    markdown += `Secret: ${secret.secretDescription}\n`;
+    if (secret.leakPatterns?.length) {
+        markdown += `Leak Patterns: ${secret.leakPatterns.join(', ')}\n`;
+    }
+    markdown += `[/censor]`;
+
+    if (data.warning) {
+        markdown += `\n\n⚠️ *${data.warning}*`;
+    }
+
+    return markdown;
+}
+
+/**
+ * Format get_secret response - fully censor for player safety
+ */
+export function formatGetSecret(data: any): string {
+    const secret = data.secret || data;
+
+    let markdown = `## 🔒 Secret Details\n\n`;
+    markdown += `**Name:** ${secret.name}\n`;
+    markdown += `**Type:** ${secret.type}\n`;
+    markdown += `**Status:** ${secret.revealed ? '🔓 Revealed' : '🔒 Hidden'}\n\n`;
+
+    // Everything sensitive goes in censor block
+    markdown += `[censor]`;
+    markdown += `ID: ${secret.id}\n`;
+    markdown += `Public: ${secret.publicDescription}\n`;
+    markdown += `Secret: ${secret.secretDescription}\n`;
+    markdown += `Sensitivity: ${secret.sensitivity}\n`;
+    if (secret.leakPatterns?.length) {
+        markdown += `Leak Patterns: ${secret.leakPatterns.join(', ')}\n`;
+    }
+    if (secret.revealConditions?.length) {
+        markdown += `Reveal Conditions: ${JSON.stringify(secret.revealConditions)}\n`;
+    }
+    if (secret.revealed) {
+        markdown += `Revealed At: ${secret.revealedAt}\n`;
+        markdown += `Revealed By: ${secret.revealedBy}\n`;
+    }
+    markdown += `[/censor]`;
+
+    return markdown;
+}
+
+/**
+ * Format list_secrets response - show summary, hide details
+ */
+export function formatListSecrets(data: any): string {
+    const secrets = data.secrets || [];
+    const count = data.count || secrets.length;
+
+    let markdown = `## 🔒 Secrets Registry (${count})\n\n`;
+
+    if (secrets.length === 0) {
+        return markdown + `> No secrets found for this world.`;
+    }
+
+    // Group by type if available
+    const byType = data.secretsByType || {};
+
+    if (Object.keys(byType).length > 0) {
+        for (const [type, typeSecrets] of Object.entries(byType)) {
+            const items = typeSecrets as any[];
+            markdown += `### ${getSecretTypeIcon(type)} ${type.charAt(0).toUpperCase() + type.slice(1)} (${items.length})\n\n`;
+
+            items.forEach((s: any) => {
+                const status = s.revealed ? '🔓' : '🔒';
+                markdown += `- ${status} **${s.name}** [censor](${s.id?.substring(0, 8)})[/censor]\n`;
+            });
+            markdown += `\n`;
+        }
+    } else {
+        secrets.forEach((s: any) => {
+            const status = s.revealed ? '🔓' : '🔒';
+            const icon = getSecretTypeIcon(s.type);
+            markdown += `- ${status} ${icon} **${s.name}** - ${s.type} [censor](${s.id?.substring(0, 8)})[/censor]\n`;
+        });
+    }
+
+    // Stats summary
+    const revealed = secrets.filter((s: any) => s.revealed).length;
+    const hidden = count - revealed;
+    markdown += `\n---\n`;
+    markdown += `**Stats:** ${hidden} hidden, ${revealed} revealed\n`;
+
+    return markdown;
+}
+
+/**
+ * Format get_secrets_for_context - FULLY CENSOR (this is LLM-only context)
+ */
+export function formatSecretsForContext(data: any): string {
+    let markdown = `## 🔒 Secrets Context Loaded\n\n`;
+    markdown += `**Secrets Loaded:** ${data.secretCount || 0}\n`;
+    markdown += `**World:** [censor]${data.worldId}[/censor]\n\n`;
+
+    markdown += `> Context injected into LLM system prompt.\n\n`;
+
+    // The entire context is DM-only
+    markdown += `[censor]`;
+    markdown += `--- FULL SECRET CONTEXT (DM ONLY) ---\n`;
+    markdown += data.context || 'No context available';
+    markdown += `\n--- END SECRET CONTEXT ---`;
+    markdown += `[/censor]`;
+
+    return markdown;
+}
+
+/**
+ * Format check_for_leaks response - show leak detection results
+ */
+export function formatCheckForLeaks(data: any): string {
+    let markdown = `## 🔍 Leak Detection\n\n`;
+
+    if (data.clean) {
+        markdown += `✅ **No leaks detected**\n\n`;
+        markdown += `> Text is safe to display to player.`;
+        return markdown;
+    }
+
+    markdown += `⚠️ **Potential leaks found: ${data.leaks?.length || 0}**\n\n`;
+
+    if (data.leaks?.length) {
+        markdown += `| Secret | Pattern | Severity |\n`;
+        markdown += `|--------|---------|----------|\n`;
+
+        data.leaks.forEach((leak: any) => {
+            markdown += `| [censor]${leak.secretName}[/censor] | \`${leak.pattern}\` | ${leak.severity} |\n`;
+        });
+        markdown += `\n`;
+    }
+
+    if (data.recommendation) {
+        markdown += `> 💡 ${data.recommendation}`;
+    }
+
+    return markdown;
+}
+
+/**
+ * Format check_reveal_conditions response
+ */
+export function formatCheckRevealConditions(data: any): string {
+    let markdown = `## 🎯 Reveal Condition Check\n\n`;
+
+    const toReveal = data.secretsToReveal || [];
+
+    if (toReveal.length === 0) {
+        markdown += `> No secrets triggered by this event.\n`;
+        return markdown;
+    }
+
+    markdown += `**Secrets Ready to Reveal:** ${toReveal.length}\n\n`;
+
+    toReveal.forEach((s: any) => {
+        markdown += `### 🔓 ${s.name}\n`;
+        markdown += `- Type: ${s.type}\n`;
+        markdown += `- [censor]Secret: ${s.secretDescription}[/censor]\n`;
+
+        if (s.matchedConditions?.length) {
+            markdown += `- Matched: ${s.matchedConditions.map((c: any) => c.type).join(', ')}\n`;
+        }
+        markdown += `\n`;
+    });
+
+    if (data.instruction) {
+        markdown += `> 💡 ${data.instruction}`;
+    }
+
+    return markdown;
+}
+
+/**
+ * Format reveal_secret response - show the spoiler markdown for player
+ */
+export function formatRevealSecret(data: any): string {
+    // If already revealed, show that message
+    if (data.message?.includes('already revealed')) {
+        let markdown = `## 🔓 Secret Already Revealed\n\n`;
+        markdown += `> This secret was previously revealed.\n\n`;
+        markdown += `[censor]`;
+        markdown += `Revealed At: ${data.revealedAt}\n`;
+        markdown += `Revealed By: ${data.revealedBy}`;
+        markdown += `[/censor]`;
+        return markdown;
+    }
+
+    let markdown = `## 🔮 Secret Revealed!\n\n`;
+
+    if (data.partial) {
+        markdown += `*Partial reveal - hint only*\n\n`;
+    }
+
+    markdown += `**Triggered By:** ${data.triggeredBy}\n\n`;
+
+    // The spoilerMarkdown is safe to show - it's designed for player viewing
+    if (data.spoilerMarkdown) {
+        markdown += `---\n\n`;
+        markdown += data.spoilerMarkdown;
+        markdown += `\n\n---\n`;
+    }
+
+    // Narration is also safe
+    if (data.narration && !data.spoilerMarkdown) {
+        markdown += `> ${data.narration}\n\n`;
+    }
+
+    // DM-only details
+    markdown += `\n[censor]`;
+    markdown += `Secret ID: ${data.secret?.id}\n`;
+    markdown += `Full Secret: ${data.secret?.secretDescription}`;
+    markdown += `[/censor]`;
+
+    return markdown;
+}
+
+/**
+ * Format update_secret response
+ */
+export function formatUpdateSecret(data: any): string {
+    let markdown = `## 🔒 Secret Updated\n\n`;
+    markdown += `✅ ${data.message || 'Secret updated successfully'}\n\n`;
+
+    if (data.secret) {
+        markdown += `**Name:** ${data.secret.name}\n`;
+        markdown += `**Type:** ${data.secret.type}\n\n`;
+
+        markdown += `[censor]`;
+        markdown += `ID: ${data.secret.id}\n`;
+        markdown += `Updated fields saved to database`;
+        markdown += `[/censor]`;
+    }
+
+    return markdown;
+}
+
+/**
+ * Format delete_secret response
+ */
+export function formatDeleteSecret(data: any): string {
+    let markdown = `## 🗑️ Secret Deleted\n\n`;
+    markdown += `✅ ${data.message || 'Secret removed from database'}\n\n`;
+
+    markdown += `[censor]Secret ID: ${data.secretId || 'unknown'}[/censor]`;
+
+    return markdown;
+}
+
+/**
+ * Helper: Get icon for secret type
+ */
+function getSecretTypeIcon(type: string): string {
+    const icons: Record<string, string> = {
+        npc: '👤',
+        location: '📍',
+        item: '📦',
+        quest: '📜',
+        plot: '🎭',
+        mechanic: '⚙️',
+        custom: '✨',
+    };
+    return icons[type?.toLowerCase()] || '🔒';
 }

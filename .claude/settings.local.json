@@ -5,7 +5,8 @@
       "Bash(powershell -Command:*)",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm run tauri:*)"
+      "Bash(npm run tauri:*)",
+      "Bash(npm run build:binaries:*)"
     ],
     "deny": [],
     "ask": []
