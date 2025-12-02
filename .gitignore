@@ -32,3 +32,13 @@ rust-mcp-server/
 
 Roo-Code
 Lightweight-CRM---Invoice/
+
+# rpg-mcp database files (prevents Tauri file watcher rebuild loops)
+*.db
+*.db-shm
+*.db-wal
+rpg.db
+rpg.db-shm
+rpg.db-wal
+# Deprecated components (old MCP servers)  
+_deprecated/ 

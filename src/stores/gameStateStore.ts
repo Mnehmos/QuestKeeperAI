@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { dnd5eItems } from '../data/dnd5eItems';
+import { parseMcpResponse, executeBatchToolCalls, debounce } from '../utils/mcpUtils';
 
 export interface InventoryItem {
   id: string;
@@ -27,16 +28,14 @@ export interface EnvironmentState {
   visibility?: string | any;
   atmospheric_pressure?: string | any;
   hazards?: string[];
-  [key: string]: any; // Allow additional custom fields
+  [key: string]: any;
 }
 
 export interface WorldState {
   location: string;
-  // Legacy flat fields for backward compatibility
   time: string;
   weather: string;
   date: string;
-  // Enhanced structured data
   environment?: EnvironmentState;
   npcs?: { [key: string]: any };
   events?: { [key: string]: any };
@@ -79,6 +78,8 @@ interface GameState {
   notes: Note[];
   activeCharacter: CharacterStats | null;
   party: CharacterStats[];
+  isSyncing: boolean;
+  lastSyncTime: number;
 
   setInventory: (items: InventoryItem[]) => void;
   setWorldState: (state: WorldState) => void;
@@ -90,108 +91,121 @@ interface GameState {
   syncState: () => Promise<void>;
 }
 
-// Helper to strip ANSI codes
-function stripAnsi(str: string): string {
-  return str.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
-}
-
-// Helper function to parse character sheet text
-function parseCharacterSheet(rawText: string): CharacterStats | null {
+/**
+ * Parse rpg-mcp character JSON into CharacterStats format
+ */
+function parseCharacterFromJson(char: any): CharacterStats | null {
   try {
-    const text = stripAnsi(rawText);
-    console.log('[GameStateStore] Parsing character sheet text:', JSON.stringify(text));
+    if (!char || !char.name) return null;
 
-    // Extract ID - Flexible matching for "ID: 12" with optional icons
-    const idMatch = text.match(/(?:🆔|ID)\s*:?\s*(\d+)/i);
-    const id = idMatch ? idMatch[1] : undefined;
-
-    // Extract name - Look for name after icon or "Name:", stop at next icon or newline
-    // Matches: 👤 Name ... or Name: Name ...
-    const nameMatch = text.match(/(?:👤|Name:?)\s*([^\n🆔🏛️📊]+?)(?=\s*(?:🆔|🏛️|📊|🧬|⚖️|📚|$))/i);
-    const name = nameMatch ? nameMatch[1].trim() : 'Unknown';
-
-    // Extract level
-    const levelMatch = text.match(/(?:📊|Level:?)\s*(\d+)/i);
-    const level = levelMatch ? parseInt(levelMatch[1]) : 1;
-
-    // Extract class - Match multiple words (e.g., "Eldritch Knight")
-    const classMatch = text.match(/(?:🏛️|Class:?)\s*([A-Za-z\s]+?)(?=\s*(?:🆔|📊|🧬|⚖️|📚|❤️|💪|$))/i);
-    const charClass = classMatch ? classMatch[1].trim() : 'Unknown';
-
-    // Extract HP
-    const hpMatch = text.match(/(?:❤️|Hit Points:?|HP:?)\s*(\d+)\s*\/\s*(\d+)/i);
-    const hp = hpMatch
-      ? { current: parseInt(hpMatch[1]), max: parseInt(hpMatch[2]) }
-      : { current: 0, max: 0 };
-
-    // Extract XP
-    const xpMatch = text.match(/(?:⭐|Experience:?|XP:?)\s*(\d+)/i);
-    const currentXp = xpMatch ? parseInt(xpMatch[1]) : 0;
-
-    // Calculate XP needed for next level (simplified)
+    const level = char.level || 1;
     const xpForNextLevel = level * 1000;
 
-    // Extract ability scores - Flexible matching
-    const strMatch = text.match(/(?:💪|STR:?)\s*(\d+)/i);
-    const dexMatch = text.match(/(?:🏃|DEX:?)\s*(\d+)/i);
-    const conMatch = text.match(/(?:❤️|CON:?)\s*(\d+)/i);
-    const intMatch = text.match(/(?:🧠|INT:?)\s*(\d+)/i);
-    const wisMatch = text.match(/(?:🧙|WIS:?)\s*(\d+)/i);
-    const chaMatch = text.match(/(?:✨|CHA:?)\s*(\d+)/i);
-
-    const stats = {
-      str: strMatch ? parseInt(strMatch[1]) : 10,
-      dex: dexMatch ? parseInt(dexMatch[1]) : 10,
-      con: conMatch ? parseInt(conMatch[1]) : 10,
-      int: intMatch ? parseInt(intMatch[1]) : 10,
-      wis: wisMatch ? parseInt(wisMatch[1]) : 10,
-      cha: chaMatch ? parseInt(chaMatch[1]) : 10,
-    };
-
-    // Extract Equipment
-    // Matches: 🛡️ Armor: Leather Armor
-    // Negative lookahead to avoid matching "Armor Class"
-    const armorMatch = text.match(/(?:🛡️|Armor:?)\s*(?!Class)([^\n🆔🏛️📊]+)/i);
-    let armor = armorMatch ? armorMatch[1].trim() : 'None';
-
-    // Clean up armor if it accidentally matched "Class: 10" or similar
-    if (armor.toLowerCase().includes('class') || armor.includes('|')) {
-      armor = 'None';
-    }
-
-    // Matches: ⚔️ Weapons: Longsword, Dagger
-    const weaponsMatch = text.match(/(?:⚔️|Weapons:?)\s*([^\n🆔🏛️📊]+)/i);
-    let weapons = weaponsMatch ? weaponsMatch[1].split(',').map(w => w.trim()) : [];
-
-    // Filter out known bad matches like "COMBAT STATS" or empty strings
-    weapons = weapons.filter(w =>
-      w &&
-      !w.toUpperCase().includes('COMBAT STATS') &&
-      !w.toUpperCase().includes('SKILLS') &&
-      w.length > 2
-    );
-
     return {
-      id,
-      name,
-      level,
-      class: charClass,
-      hp,
-      xp: { current: currentXp, max: xpForNextLevel },
-      stats,
+      id: char.id,
+      name: char.name,
+      level: level,
+      class: char.class || 'Adventurer',
+      hp: {
+        current: char.hp || 0,
+        max: char.maxHp || char.hp || 0
+      },
+      xp: {
+        current: char.experience || 0,
+        max: xpForNextLevel
+      },
+      stats: {
+        str: char.stats?.str || 10,
+        dex: char.stats?.dex || 10,
+        con: char.stats?.con || 10,
+        int: char.stats?.int || 10,
+        wis: char.stats?.wis || 10,
+        cha: char.stats?.cha || 10
+      },
       equipment: {
-        armor,
-        weapons,
-        other: [] // Placeholder for now
+        armor: 'None',
+        weapons: [],
+        other: []
       }
     };
   } catch (error) {
-    console.error('Failed to parse character sheet:', error);
+    console.error('[parseCharacterFromJson] Failed to parse character:', error);
     return null;
   }
 }
 
-export const useGameStateStore = create<GameState>((set) => ({
+/**
+ * Parse inventory data from rpg-mcp response
+ */
+function parseInventoryFromJson(inventoryData: any): InventoryItem[] {
+  const items: InventoryItem[] = [];
+  
+  if (!inventoryData?.items || !Array.isArray(inventoryData.items)) {
+    return items;
+  }
+
+  inventoryData.items.forEach((item: any, index: number) => {
+    // Look up item details in reference database
+    const itemName = item.name || item.itemId || '';
+    const refItemKey = Object.keys(dnd5eItems).find(
+      k => k.toLowerCase() === itemName.toLowerCase()
+    );
+    const refItem = refItemKey ? dnd5eItems[refItemKey] : null;
+
+    items.push({
+      id: item.id || item.itemId || `item-${index}`,
+      name: refItem?.name || itemName || 'Unknown Item',
+      description: refItem?.description || item.description || '',
+      quantity: item.quantity || 1,
+      type: refItem?.type || item.type || 'misc',
+      weight: refItem?.weight || item.weight,
+      value: refItem ? parseFloat(refItem.value?.replace(/[^0-9.]/g, '') || '0') : item.value,
+      equipped: item.equipped || false
+    });
+  });
+
+  return items;
+}
+
+/**
+ * Parse quest data from rpg-mcp response into notes
+ */
+function parseQuestsToNotes(questData: any): Note[] {
+  const notes: Note[] = [];
+
+  if (!questData) return notes;
+
+  // Handle activeQuests array
+  const activeQuests = questData.activeQuests || questData.quests || [];
+  
+  if (Array.isArray(activeQuests)) {
+    activeQuests.forEach((quest: any, index: number) => {
+      if (typeof quest === 'string') {
+        // Just a quest ID/name
+        notes.push({
+          id: `quest-${quest}`,
+          title: `Quest: ${quest}`,
+          content: `Active quest: ${quest}`,
+          author: 'ai',
+          timestamp: Date.now()
+        });
+      } else if (quest && typeof quest === 'object') {
+        // Full quest object
+        notes.push({
+          id: `quest-${quest.id || index}`,
+          title: quest.name || quest.title || 'Quest',
+          content: `${quest.description || ''}\n\nStatus: ${quest.status || 'Active'}`,
+          author: 'ai',
+          timestamp: Date.now()
+        });
+      }
+    });
+  }
+
+  return notes;
+}
+
+export const useGameStateStore = create<GameState>((set, get) => ({
   inventory: [],
   world: {
     time: 'Unknown',
@@ -205,6 +219,8 @@ export const useGameStateStore = create<GameState>((set) => ({
   notes: [],
   activeCharacter: null,
   party: [],
+  isSyncing: false,
+  lastSyncTime: 0,
 
   setInventory: (items) => set({ inventory: items }),
   setWorldState: (state) => set({ world: state }),
@@ -224,301 +240,161 @@ export const useGameStateStore = create<GameState>((set) => ({
   })),
 
   syncState: async () => {
+    const { isSyncing, lastSyncTime } = get();
+    
+    // Prevent concurrent syncs and rate limit to max once per 2 seconds
+    if (isSyncing) {
+      console.log('[GameStateStore] Sync already in progress, skipping');
+      return;
+    }
+    
+    const now = Date.now();
+    if (now - lastSyncTime < 2000) {
+      console.log('[GameStateStore] Rate limited, skipping sync');
+      return;
+    }
+
+    set({ isSyncing: true, lastSyncTime: now });
+
     try {
       const { mcpManager } = await import('../services/mcpClient');
 
-      // 1. Fetch Active Character from Game State Server
-      // Strategy: list_characters -> get first character ID -> get_character(id)
-      let activeCharId: number | null = null;
+      // Active character ID (string UUID in rpg-mcp)
+      let activeCharId: string | null = null;
+
+      // ============================================
+      // 1. Fetch Characters from rpg-mcp
+      // ============================================
       try {
         console.log('[GameStateStore] Listing characters...');
 
         const listResult = await mcpManager.gameStateClient.callTool('list_characters', {});
-        console.log('[GameStateStore] List characters result:', listResult);
+        console.log('[GameStateStore] Raw list_characters result:', listResult);
 
-        if (listResult && listResult.content && listResult.content[0]?.text) {
-          const rawText = stripAnsi(listResult.content[0].text);
-          console.log('[GameStateStore] List characters raw text:', JSON.stringify(rawText));
+        // Parse using utility - handles both MCP wrapper and direct JSON
+        const listData = parseMcpResponse<{ characters: any[]; count: number }>(
+          listResult, 
+          { characters: [], count: 0 }
+        );
+        
+        console.log('[GameStateStore] Parsed characters data:', listData);
+        console.log('[GameStateStore] Found', listData.count || listData.characters?.length || 0, 'characters');
 
-          // Extract ALL character IDs using regex
-          const idMatches = rawText.matchAll(/ID:\s*(\d+)/g);
-          const characterIds: number[] = [];
-          for (const match of idMatches) {
-            characterIds.push(parseInt(match[1]));
+        const characters = listData.characters || [];
+
+        if (characters.length > 0) {
+          // Parse all characters
+          const allCharacters: CharacterStats[] = [];
+          
+          for (const char of characters) {
+            const charData = parseCharacterFromJson(char);
+            if (charData) {
+              allCharacters.push(charData);
+            }
           }
 
-          console.log('[GameStateStore] Extracted character IDs:', characterIds);
+          console.log('[GameStateStore] Loaded', allCharacters.length, 'valid characters');
 
-          if (characterIds.length > 0) {
-            // Fetch ALL characters
-            const allCharacters = [];
-            for (const id of characterIds) {
-              const charResult = await mcpManager.gameStateClient.callTool('get_character', {
-                character_id: id
-              });
-
-              if (charResult && charResult.content && charResult.content[0]?.text) {
-                const charText = charResult.content[0].text;
-                const charData = parseCharacterSheet(charText);
-                if (charData) {
-                  allCharacters.push(charData);
-                }
-              }
-            }
-
-            console.log('[GameStateStore] Loaded', allCharacters.length, 'characters');
-
-            if (allCharacters.length > 0) {
-              set({
-                activeCharacter: allCharacters[0],
-                party: allCharacters
-              });
-              activeCharId = parseInt(allCharacters[0].id || '0');
-            }
-          } else {
-            console.log('[GameStateStore] No characters found in database');
+          if (allCharacters.length > 0) {
+            // Use existing active character if still valid, otherwise use first
+            const currentActive = get().activeCharacter;
+            const stillExists = currentActive?.id && allCharacters.find(c => c.id === currentActive.id);
+            
+            const newActive = stillExists ? currentActive : allCharacters[0];
+            
+            set({
+              activeCharacter: newActive,
+              party: allCharacters
+            });
+            activeCharId = newActive?.id || null;
           }
+        } else {
+          console.log('[GameStateStore] No characters found in database');
         }
       } catch (e) {
-        console.warn('Failed to fetch character list:', e);
+        console.warn('[GameStateStore] Failed to fetch character list:', e);
       }
 
-      // If we don't have an active character ID, we can't fetch inventory or world state
+      // If we don't have an active character ID, we can't fetch inventory or quests
       if (!activeCharId) {
-        console.log('[GameStateStore] No active character ID found, skipping inventory/world sync');
+        console.log('[GameStateStore] No active character ID, skipping inventory/quest sync');
+        set({ isSyncing: false });
         return;
       }
 
-      console.log('[GameStateStore] Starting inventory/world/quest sync with character ID:', activeCharId);
+      console.log('[GameStateStore] Syncing data for character ID:', activeCharId);
 
-      // 2. Fetch Inventory (Game State Server)
-      try {
-        console.log('[GameStateStore] Fetching inventory for ID:', activeCharId);
-        const inventoryResult = await mcpManager.gameStateClient.callTool('get_inventory', {
-          character_id: activeCharId
-        });
-        console.log('[GameStateStore] Inventory result:', inventoryResult);
+      // ============================================
+      // 2. Batch fetch inventory and quests in parallel
+      // ============================================
+      const batchResults = await executeBatchToolCalls(mcpManager.gameStateClient, [
+        { name: 'get_inventory', args: { characterId: activeCharId } },
+        { name: 'get_quest_log', args: { characterId: activeCharId } }
+      ]);
 
-        if (inventoryResult && inventoryResult.content && inventoryResult.content[0].text) {
-          const text = stripAnsi(inventoryResult.content[0].text);
-          console.log('[GameStateStore] Inventory raw text:', JSON.stringify(text));
-
-          let items: InventoryItem[] = [];
-
-          // Try JSON parse first
-          try {
-            items = JSON.parse(text);
-          } catch {
-            // Fallback to regex parsing for formatted text
-            // Format:
-            // 1. 📦 Hide Armor
-            //     📋 Type: armor
-            // 2. 📦 Gold Pieces x50
-            //     📋 Type: currency
-
-            const lines = text.split('\n');
-            let currentItem: Partial<InventoryItem> | null = null;
-
-            lines.forEach((line) => {
-              const trimmedLine = line.trim();
-
-              // Match Item Line: "1. 📦 Item Name x5" or "📦 Item Name"
-              // Regex: Optional number prefix, then box icon, then name, optional quantity
-              const itemMatch = trimmedLine.match(/^(?:\d+\.\s*)?(?:📦|-|\*)\s+(.+?)(?:\s+(?:x|Qty:)\s*(\d+)|\s*\(x(\d+)\))?$/i);
-
-              if (itemMatch) {
-                // If we were parsing an item, push it
-                if (currentItem && (currentItem as any).name) {
-                  items.push(currentItem as InventoryItem);
+      // Process inventory result
+      const inventoryResult = batchResults.find(r => r.name === 'get_inventory');
+      if (inventoryResult && !inventoryResult.error) {
+        const inventoryData = parseMcpResponse<any>(inventoryResult.result, null);
+        
+        if (inventoryData) {
+          const items = parseInventoryFromJson(inventoryData);
+          console.log('[GameStateStore] Parsed', items.length, 'inventory items');
+          
+          set((state) => {
+            // Update equipment from inventory if available
+            let newActiveCharacter = state.activeCharacter;
+            
+            if (newActiveCharacter && inventoryData.equipment) {
+              const equipment = inventoryData.equipment;
+              newActiveCharacter = {
+                ...newActiveCharacter,
+                equipment: {
+                  armor: equipment.armor || 'None',
+                  weapons: [equipment.mainhand, equipment.offhand].filter(Boolean),
+                  other: [equipment.head, equipment.feet, equipment.accessory].filter(Boolean)
                 }
-
-                const rawName = itemMatch[1].trim();
-                const quantity = parseInt(itemMatch[2] || itemMatch[3] || '1');
-
-                // Look up item in reference database
-                const refItemKey = Object.keys(dnd5eItems).find(k => k.toLowerCase() === rawName.toLowerCase());
-                const refItem = refItemKey ? dnd5eItems[refItemKey] : null;
-
-                currentItem = {
-                  id: `item-${items.length}`,
-                  name: refItem ? refItem.name : rawName, // Use canonical name if found
-                  description: refItem ? refItem.description : rawName,
-                  quantity: quantity,
-                  type: refItem ? refItem.type : 'item',
-                  weight: refItem ? refItem.weight : undefined,
-                  value: refItem ? parseFloat(refItem.value?.replace(/[^0-9.]/g, '') || '0') : undefined,
-                  equipped: false
-                };
-              }
-              // Match Type Line: "📋 Type: armor"
-              else if (currentItem && trimmedLine.match(/^(?:📋|Type:|\[Type:)/i)) {
-                const typeMatch = trimmedLine.match(/(?:📋|Type:|\[Type:)\s*([^\]]+)/i);
-                if (typeMatch) {
-                  // Only overwrite type if we didn't find it in the reference DB, or if the DB type is generic
-                  if (!currentItem.type || currentItem.type === 'item') {
-                    currentItem.type = typeMatch[1].trim().replace(']', '');
-                  }
-                }
-              }
-            });
-
-            // Push the last item
-            if (currentItem && (currentItem as any).name) {
-              items.push(currentItem as InventoryItem);
-            }
-          }
-
-          console.log('[GameStateStore] Parsed inventory items:', items);
-          if (items.length > 0) {
-            set((state) => {
-              // Update active character equipment if it was empty (fallback)
-              let newActiveCharacter = state.activeCharacter;
-
-              if (newActiveCharacter) {
-                const hasParsedEquipment = newActiveCharacter.equipment.armor !== 'None' || newActiveCharacter.equipment.weapons.length > 0;
-
-                // Also check if the parsed equipment looks valid (not "COMBAT STATS" or "Armor Class")
-                const isEquipmentValid = hasParsedEquipment &&
-                  !newActiveCharacter.equipment.armor.includes('Armor Class') &&
-                  !newActiveCharacter.equipment.weapons.some(w => w.includes('COMBAT STATS'));
-
-                if (!isEquipmentValid) {
-                  console.log('[GameStateStore] Equipment missing or invalid, populating from inventory...');
-                  const armor = items.find(i => i.type.toLowerCase().includes('armor'))?.name || 'None';
-                  const weapons = items.filter(i => i.type.toLowerCase().includes('weapon')).map(i => i.name);
-
-                  newActiveCharacter = {
-                    ...newActiveCharacter,
-                    equipment: {
-                      armor,
-                      weapons,
-                      other: []
-                    }
-                  };
-                }
-              }
-
-              return {
-                inventory: items,
-                activeCharacter: newActiveCharacter
               };
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to sync inventory:', e);
-      }
-
-      // 3. Fetch World State (Game State Server)
-      try {
-        const worldResult = await mcpManager.gameStateClient.callTool('get_world_state', {
-          character_id: activeCharId
-        });
-        if (worldResult && worldResult.content && worldResult.content[0].text) {
-          const text = stripAnsi(worldResult.content[0].text);
-          console.log('[GameStateStore] World State raw text:', JSON.stringify(text));
-
-          let rawWorld: any = null;
-
-          // Try extracting JSON block if present (e.g. "RAW DATA: { ... }" or with code fences)
-          // Pattern handles: RAW DATA:\n```json\n{...}\n``` or RAW DATA: {...}
-          const jsonMatch = text.match(/RAW DATA:\s*```json\s*\n([\s\S]*?)\n```|RAW DATA:\s*({[\s\S]*})/);
-          if (jsonMatch) {
-            try {
-              // Group 1 is for code fence format, group 2 is for inline format
-              const jsonString = jsonMatch[1] || jsonMatch[2];
-              rawWorld = JSON.parse(jsonString);
-              console.log('[GameStateStore] Parsed world state from RAW DATA:', rawWorld);
-            } catch (e) {
-              console.warn('Failed to parse extracted World JSON', e);
             }
-          } else {
-            // Try direct JSON parse
-            try {
-              rawWorld = JSON.parse(text);
-            } catch {
-              // Fallback: Parse Text Key-Values
-              // 📍 Location: Tavern
-              // ☁️ Weather: Sunny
-              // 🕒 Time: Morning
-              const locationMatch = text.match(/(?:📍|Location:)\s*(.+)/i);
-              const weatherMatch = text.match(/(?:☁️|Weather:)\s*(.+)/i);
-              const timeMatch = text.match(/(?:🕒|Time:)\s*(.+)/i);
-              const dateMatch = text.match(/(?:📅|Date:)\s*(.+)/i);
-
-              if (locationMatch || weatherMatch || timeMatch) {
-                rawWorld = {
-                  location: locationMatch ? locationMatch[1].trim() : undefined,
-                  environment: {
-                    weather: weatherMatch ? weatherMatch[1].trim() : undefined,
-                    time: timeMatch ? timeMatch[1].trim() : undefined,
-                    date: dateMatch ? dateMatch[1].trim() : undefined
-                  }
-                };
-              }
-            }
-          }
-
-
-          if (rawWorld) {
-            // Extract environment data
-            const env = rawWorld.environment || {};
-
-            // Map nested structure to enhanced WorldState interface
-            const worldState: WorldState = {
-              location: rawWorld.location || 'Unknown',
-              // Legacy flat fields (backward compatibility)
-              time: env.time_of_day || env.time || 'Unknown',
-              weather: env.weather || 'Unknown',
-              date: env.date || env.season || 'Unknown',
-              // Enhanced structured data
-              environment: env,
-              npcs: rawWorld.npcs || {},
-              events: rawWorld.events || {},
-              lastUpdated: rawWorld.updated_at || new Date().toISOString()
+            
+            return {
+              inventory: items,
+              activeCharacter: newActiveCharacter
             };
-            set({ world: worldState });
-          }
+          });
         }
-      } catch (e) {
-        console.warn('Failed to sync world state:', e);
+      } else if (inventoryResult?.error) {
+        console.warn('[GameStateStore] Inventory fetch error:', inventoryResult.error);
       }
 
-      // 4. Fetch Quests/Notes (Game State Server)
-      try {
-        const questsResult = await mcpManager.gameStateClient.callTool('get_active_quests', {
-          character_id: activeCharId
-        });
-        if (questsResult && questsResult.content && questsResult.content[0].text) {
-          const text = questsResult.content[0].text;
-
-          // Check for "NO ACTIVE QUESTS"
-          if (text.includes('NO ACTIVE QUESTS')) {
-            set({ notes: [] });
-          } else {
-            // Try JSON parse
-            try {
-              const quests = JSON.parse(text);
-              const questNotes: Note[] = quests.map((q: any) => ({
-                id: `quest-${q.id}`,
-                title: q.title || 'Quest',
-                content: `${q.description}\n\nStatus: ${q.status}`,
-                author: 'ai',
-                timestamp: Date.now()
-              }));
-              set({ notes: questNotes });
-            } catch {
-              // Fallback: If text but not "NO ACTIVE QUESTS", maybe treat whole text as a note?
-              // For now, just ignore if not JSON
-            }
+      // Process quest result
+      const questResult = batchResults.find(r => r.name === 'get_quest_log');
+      if (questResult && !questResult.error) {
+        const questData = parseMcpResponse<any>(questResult.result, null);
+        
+        if (questData) {
+          const questNotes = parseQuestsToNotes(questData);
+          console.log('[GameStateStore] Parsed', questNotes.length, 'quest notes');
+          
+          if (questNotes.length > 0) {
+            set({ notes: questNotes });
           }
         }
-      } catch (e) {
-        console.warn('Failed to sync quests:', e);
+      } else if (questResult?.error) {
+        console.warn('[GameStateStore] Quest fetch error:', questResult.error);
       }
+
+      console.log('[GameStateStore] Sync complete');
 
     } catch (error) {
-      console.error('Error syncing game state:', error);
+      console.error('[GameStateStore] Error syncing game state:', error);
+    } finally {
+      set({ isSyncing: false });
     }
   }
 }));
+
+// Export debounced sync for use in components
+export const debouncedSyncState = debounce(() => {
+  useGameStateStore.getState().syncState();
+}, 1000);

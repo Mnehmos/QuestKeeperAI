@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { CreatureSize } from '../utils/gridHelpers';
 import { mcpManager } from '../services/mcpClient';
+import { parseMcpResponse, debounce } from '../utils/mcpUtils';
 
 export type Vector3 = { x: number; y: number; z: number };
 
@@ -58,6 +59,14 @@ interface CombatState {
   selectedTerrainId: string | null;
   gridConfig: GridConfig;
   battlefieldDescription: string | null;
+  
+  // rpg-mcp encounter tracking
+  activeEncounterId: string | null;
+  currentRound: number;
+  currentTurnName: string | null;
+  turnOrder: string[];
+  isSyncing: boolean;
+  lastSyncTime: number;
 
   addEntity: (entity: Entity) => void;
   removeEntity: (id: string) => void;
@@ -67,186 +76,151 @@ interface CombatState {
   selectTerrain: (id: string | null) => void;
   setGridConfig: (config: GridConfig) => void;
   setBattlefieldDescription: (desc: string | null) => void;
+  setActiveEncounterId: (id: string | null) => void;
   syncCombatState: () => Promise<void>;
+  clearCombat: () => void;
 }
 
 const MOCK_ENTITIES: Entity[] = [];
 
-function parseBattlefieldText(text: string): { entities: Entity[]; terrain: TerrainFeature[]; gridConfig: GridConfig } {
-  const entities: Entity[] = [];
-  const terrain: TerrainFeature[] = [];
-  let gridConfig: GridConfig = { size: 20, divisions: 20 };
+// Monster name patterns for entity type detection
+const MONSTER_PATTERNS = [
+  'goblin', 'orc', 'dragon', 'skeleton', 'zombie', 'wolf', 'bandit',
+  'troll', 'giant', 'demon', 'devil', 'undead', 'beast', 'spider',
+  'kobold', 'gnoll', 'ogre', 'vampire', 'werewolf', 'lich', 'elemental'
+];
 
-  console.log('[parseBattlefieldText] Raw text:', text);
-
-  try {
-    const battlefieldMatch = text.match(/⚔️\s+\*\*BATTLEFIELD\*\*:\s+(\d+)×(\d+)\s+squares/);
-    if (battlefieldMatch) {
-      const width = parseInt(battlefieldMatch[1]);
-      const height = parseInt(battlefieldMatch[2]);
-      gridConfig = { size: Math.max(width, height), divisions: Math.max(width, height) };
+/**
+ * Determine entity type and color based on name and position in turn order
+ */
+function determineEntityType(name: string, index: number): { type: 'character' | 'npc' | 'monster'; color: string } {
+  const lowerName = name.toLowerCase();
+  
+  // Check for monster patterns
+  for (const pattern of MONSTER_PATTERNS) {
+    if (lowerName.includes(pattern)) {
+      return { type: 'monster', color: '#ff4444' }; // Red for monsters
     }
-
-    // Parse terrain section
-    const terrainSectionMatch = text.match(/🏗️\s+\*\*TERRAIN\*\*:([\s\S]*?)(?=👥\s+\*\*COMBATANTS\*\*:|$)/);
-    if (terrainSectionMatch) {
-      const terrainSection = terrainSectionMatch[1];
-      console.log('[parseBattlefieldText] Terrain section found:', terrainSection);
-
-      // Split by bullet point '•' to handle both newline and inline formatting
-      const terrainItems = terrainSection.split('•')
-        .map(item => item.trim())
-        .filter(item => item.length > 0);
-
-      console.log('[parseBattlefieldText] Found', terrainItems.length, 'terrain items');
-
-      terrainItems.forEach((item, index) => {
-        try {
-          // Example: Wall at (5,3) - 1×1×5ft [blocks movement]
-          // Updated regex to handle optional spaces in coords: (5, 3)
-          const posMatch = item.match(/at\s+\((\d+),\s*(\d+)\)\s*-\s*(\d+)\s*×\s*(\d+)\s*×\s*(\d+)ft/);
-          const typeMatch = item.match(/^([^\s]+)/);
-
-          if (posMatch && typeMatch) {
-            const mcpX = parseInt(posMatch[1]);
-            const mcpY = parseInt(posMatch[2]);
-            const widthFt = parseInt(posMatch[3]);
-            const lengthFt = parseInt(posMatch[4]); // 2D depth/length
-            const heightFt = parseInt(posMatch[5]); // Vertical height
-            const terrainType = typeMatch[1].toLowerCase();
-
-            const blocksMovement = item.includes('[blocks movement]');
-            let coverType: 'half' | 'three-quarters' | 'full' | 'none' = 'none';
-            if (item.includes('[half cover]')) coverType = 'half';
-            else if (item.includes('[three-quarters cover]')) coverType = 'three-quarters';
-            else if (item.includes('[full cover]')) coverType = 'full';
-
-            let color = '#808080';
-            if (terrainType === 'wall') color = '#555555';
-            else if (terrainType === 'pillar') color = '#666666';
-            else if (terrainType.includes('difficult')) color = '#8b4513';
-
-            // Convert dimensions (5ft = 1 grid unit)
-            const width = widthFt / 5;
-            const depth = lengthFt / 5; // Z-axis dimension
-            let height = heightFt / 5;  // Y-axis dimension
-
-            // Flatten difficult terrain if it's not blocking movement or explicitly tall
-            if (terrainType.includes('difficult') && !blocksMovement) {
-              height = 0.1;
-            }
-
-            // Transform MCP coords (0-20) to visualizer coords (centered at 0,0)
-            // Add 0.5 to center features within their grid square
-            const visualizerX = mcpX - (gridConfig.size / 2) + 0.5;
-            const visualizerZ = mcpY - (gridConfig.size / 2) + 0.5;
-
-            terrain.push({
-              id: `terrain-${index}-${terrainType}`,
-              type: terrainType,
-              position: { x: visualizerX, y: height / 2, z: visualizerZ },
-              dimensions: { width, height, depth },
-              blocksMovement,
-              coverType,
-              color
-            });
-
-            console.log(`[parseBattlefieldText] Parsed terrain: ${terrainType} at MCP(${mcpX},${mcpY}) => Vis(${visualizerX},${visualizerZ})`);
-          }
-        } catch (err) {
-          console.warn('[parseBattlefieldText] Failed to parse terrain item:', item, err);
-        }
-      });
-    }
-
-    const combatantsSection = text.split('👥 **COMBATANTS**:')[1];
-
-    if (combatantsSection) {
-      const creatureLines = combatantsSection.split('\n')
-        .filter(line => line.trim().startsWith('•'))
-        .map(line => line.trim().substring(1).trim());
-
-      console.log('[parseBattlefieldText] Found', creatureLines.length, 'creature lines');
-
-      creatureLines.forEach((line, index) => {
-        try {
-          console.log('[parseBattlefieldText] Parsing line:', line);
-          // Updated regex to handle optional spaces in coords: (17, 4, 10)
-          const nameMatch = line.match(/^(.+?)\s+at\s+\((\d+),\s*(\d+),\s*(\d+)\)/);
-          if (!nameMatch) {
-            console.warn('[parseBattlefieldText] No name match for line:', line);
-            return;
-          }
-
-          const name = nameMatch[1].trim();
-          const mcpX = parseInt(nameMatch[2]);
-          const mcpY = parseInt(nameMatch[3]);
-          const mcpZ = parseInt(nameMatch[4]);
-
-          console.log(`[parseBattlefieldText] MCP coords: (${mcpX}, ${mcpY}, ${mcpZ})`);
-
-          const sizeMatch = line.match(/(tiny|small|medium|large|huge|gargantuan)\s+creature/i);
-          const sizeLower = (sizeMatch ? sizeMatch[1].toLowerCase() : 'medium');
-          const size = (sizeLower.charAt(0).toUpperCase() + sizeLower.slice(1)) as CreatureSize;
-
-          let color = '#00ff00';
-          let type: 'character' | 'npc' | 'monster' = 'character';
-
-          const lowerName = name.toLowerCase();
-          if (lowerName.includes('goblin') || lowerName.includes('orc') || lowerName.includes('dragon')) {
-            color = '#ff0000';
-            type = 'monster';
-          } else if (index === 0) {
-            color = '#00ff00';
-            type = 'character';
-          } else {
-            color = '#ffaa00';
-            type = 'npc';
-          }
-
-          // Transform MCP coords (0-20) to visualizer coords (centered at 0,0)
-          // Token.tsx handles the centering offset via calculateGridPosition, so we pass the base integer coord here
-          const visualizerX = mcpX - (gridConfig.size / 2);
-          const visualizerZ = mcpY - (gridConfig.size / 2);
-
-          const entity = {
-            id: `creature-${index}-${name.toLowerCase().replace(/\s+/g, '-')}`,
-            name,
-            type,
-            size,
-            position: { x: visualizerX, y: mcpZ, z: visualizerZ },
-            color,
-            model: (size === 'Small' || size === 'Tiny') ? 'sphere' : 'box',
-            metadata: {
-              hp: { current: 20, max: 20 },
-              ac: 15,
-              creatureType: 'Unknown',
-              conditions: []
-            }
-          };
-
-          console.log(`[parseBattlefieldText] Created entity at MCP(${mcpX},${mcpY}) => Vis(${visualizerX},${visualizerZ})`);
-          entities.push(entity);
-        } catch (err) {
-          console.warn('[parseBattlefieldText] Failed to parse creature line:', line, err);
-        }
-      });
-    }
-
-  } catch (error) {
-    console.error('[parseBattlefieldText] Error parsing battlefield text:', error);
   }
-
-  return { entities, terrain, gridConfig };
+  
+  // First participant is usually the player character
+  if (index === 0) {
+    return { type: 'character', color: '#44ff44' }; // Green for player
+  }
+  
+  // Others default to NPC (could be allies)
+  return { type: 'npc', color: '#ffaa44' }; // Orange for NPCs
 }
 
-export const useCombatStore = create<CombatState>((set) => ({
+/**
+ * Parse rpg-mcp encounter state into entities
+ */
+function parseEncounterState(data: any, gridConfig: GridConfig): { 
+  entities: Entity[]; 
+  currentRound: number;
+  currentTurnName: string | null;
+  turnOrder: string[];
+} {
+  const entities: Entity[] = [];
+  
+  if (!data || !data.participants) {
+    return { entities, currentRound: 0, currentTurnName: null, turnOrder: [] };
+  }
+
+  const participants = data.participants;
+  const participantCount = participants.length;
+  
+  // Position participants in a circle around the center
+  const radius = Math.min(gridConfig.size / 4, 6);
+  
+  participants.forEach((p: any, index: number) => {
+    // Calculate position in a circle
+    const angle = (2 * Math.PI * index) / participantCount - Math.PI / 2; // Start from top
+    
+    const x = Math.round(Math.cos(angle) * radius);
+    const z = Math.round(Math.sin(angle) * radius);
+    
+    const { type, color } = determineEntityType(p.name || '', index);
+
+    const entity: Entity = {
+      id: p.id,
+      name: p.name,
+      type,
+      size: 'Medium' as CreatureSize,
+      position: { x, y: 0, z },
+      color,
+      model: 'box',
+      metadata: {
+        hp: {
+          current: p.hp || 0,
+          max: p.maxHp || p.hp || 0
+        },
+        ac: p.ac || 10,
+        creatureType: type,
+        conditions: p.conditions || []
+      }
+    };
+    
+    entities.push(entity);
+  });
+
+  return {
+    entities,
+    currentRound: data.round || 1,
+    currentTurnName: data.currentTurn?.participantName || data.currentTurn?.name || null,
+    turnOrder: data.turnOrder || []
+  };
+}
+
+/**
+ * Generate battlefield description from parsed state
+ */
+function generateBattlefieldDescription(
+  entities: Entity[], 
+  round: number, 
+  currentTurn: string | null,
+  turnOrder: string[]
+): string {
+  if (entities.length === 0) {
+    return 'No active combat encounter.';
+  }
+
+  const lines = [
+    `⚔️ Combat Round ${round}`,
+    `🎯 Current Turn: ${currentTurn || 'Unknown'}`,
+    `📋 Initiative: ${turnOrder.join(' → ')}`,
+    '',
+    '👥 Combatants:'
+  ];
+  
+  entities.forEach(e => {
+    const hpPercent = Math.round((e.metadata.hp.current / e.metadata.hp.max) * 100);
+    const hpBar = hpPercent > 66 ? '🟢' : hpPercent > 33 ? '🟡' : '🔴';
+    const conditions = e.metadata.conditions.length > 0 
+      ? ` [${e.metadata.conditions.join(', ')}]` 
+      : '';
+    
+    lines.push(`  ${hpBar} ${e.name}: ${e.metadata.hp.current}/${e.metadata.hp.max} HP${conditions}`);
+  });
+
+  return lines.join('\n');
+}
+
+export const useCombatStore = create<CombatState>((set, get) => ({
   entities: MOCK_ENTITIES,
   terrain: [],
   selectedEntityId: null,
   selectedTerrainId: null,
-  gridConfig: { size: 10, divisions: 10 },
+  gridConfig: { size: 20, divisions: 20 },
   battlefieldDescription: null,
+  
+  // rpg-mcp encounter tracking
+  activeEncounterId: null,
+  currentRound: 0,
+  currentTurnName: null,
+  turnOrder: [],
+  isSyncing: false,
+  lastSyncTime: 0,
 
   addEntity: (entity) => set((state) => ({
     entities: [...state.entities, entity]
@@ -287,40 +261,102 @@ export const useCombatStore = create<CombatState>((set) => ({
   setGridConfig: (config) => set({ gridConfig: config }),
 
   setBattlefieldDescription: (desc) => set({ battlefieldDescription: desc }),
+  
+  setActiveEncounterId: (id) => set({ activeEncounterId: id }),
+  
+  clearCombat: () => set({
+    entities: [],
+    terrain: [],
+    activeEncounterId: null,
+    currentRound: 0,
+    currentTurnName: null,
+    turnOrder: [],
+    battlefieldDescription: null,
+    selectedEntityId: null
+  }),
 
   syncCombatState: async () => {
+    const { activeEncounterId, gridConfig, isSyncing, lastSyncTime } = get();
+    
+    // Prevent concurrent syncs and rate limit
+    if (isSyncing) {
+      return;
+    }
+    
+    const now = Date.now();
+    if (now - lastSyncTime < 1000) {
+      return;
+    }
+    
+    // If no active encounter, nothing to sync
+    if (!activeEncounterId) {
+      console.log('[syncCombatState] No active encounter. Use create_encounter via LLM to start combat.');
+      return;
+    }
+
+    set({ isSyncing: true, lastSyncTime: now });
+
     try {
+      console.log('[syncCombatState] Fetching encounter state for:', activeEncounterId);
+      
+      const result = await mcpManager.combatClient.callTool('get_encounter_state', {
+        encounterId: activeEncounterId
+      });
 
+      console.log('[syncCombatState] Raw result:', result);
 
-      try {
-        console.log('[syncCombatState] Calling describe_battlefield...');
-        const result = await mcpManager.combatClient.callTool('describe_battlefield', {});
-
-        if (result && result.content && result.content[0].text) {
-          const text = result.content[0].text;
-          console.log('[syncCombatState] Received battlefield text');
-          set({ battlefieldDescription: text });
-
-          const parsedState = parseBattlefieldText(text);
-
-          console.log('[syncCombatState] Parsed', parsedState.entities.length, 'entities');
-          console.log('[syncCombatState] Parsed', parsedState.terrain.length, 'terrain features');
-
-          if (parsedState.entities.length > 0 || parsedState.terrain.length > 0) {
-            set({
-              entities: parsedState.entities,
-              terrain: parsedState.terrain,
-              gridConfig: parsedState.gridConfig
-            });
-          } else {
-            console.warn('[syncCombatState] No entities/terrain parsed, keeping current state');
-          }
-        }
-      } catch (e) {
+      // Parse using utility - handles both MCP wrapper and direct JSON
+      const data = parseMcpResponse<any>(result, null);
+      
+      if (data) {
+        console.log('[syncCombatState] Parsed encounter data:', data);
+        
+        const parsed = parseEncounterState(data, gridConfig);
+        
+        console.log('[syncCombatState] Generated', parsed.entities.length, 'entities');
+        console.log('[syncCombatState] Round:', parsed.currentRound, 'Turn:', parsed.currentTurnName);
+        
+        const description = generateBattlefieldDescription(
+          parsed.entities,
+          parsed.currentRound,
+          parsed.currentTurnName,
+          parsed.turnOrder
+        );
+        
+        set({
+          entities: parsed.entities,
+          currentRound: parsed.currentRound,
+          currentTurnName: parsed.currentTurnName,
+          turnOrder: parsed.turnOrder,
+          battlefieldDescription: description
+        });
+      } else {
+        console.warn('[syncCombatState] No data in response');
+      }
+    } catch (e: any) {
+      const errorMsg = e?.message || String(e);
+      
+      // If encounter not found, clear the active encounter
+      if (errorMsg.includes('not found') || errorMsg.includes('does not exist')) {
+        console.log('[syncCombatState] Encounter not found, clearing combat state');
+        set({ 
+          activeEncounterId: null,
+          entities: [],
+          battlefieldDescription: 'No active encounter.',
+          currentRound: 0,
+          currentTurnName: null,
+          turnOrder: []
+        });
+      } else {
         console.warn('[syncCombatState] Failed to sync combat state:', e);
       }
-    } catch (error) {
-      console.error('[syncCombatState] Error syncing combat state:', error);
+    } finally {
+      set({ isSyncing: false });
     }
   }
 }));
+
+// Export debounced sync for use in components
+export const debouncedSyncCombatState = debounce(() => {
+  useCombatStore.getState().syncCombatState();
+}, 500);

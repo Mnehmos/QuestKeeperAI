@@ -25,11 +25,13 @@ function App() {
     };
     initMcp();
 
-    // Poll for game state updates every 5 seconds
+    // Poll for game state updates every 30 seconds (reduced from 5s)
+    // Note: State is now synced automatically after LLM tool calls, 
+    // so this is just a backup for any changes made outside the LLM flow
     const interval = setInterval(() => {
       syncState();
       syncCombatState();
-    }, 5000);
+    }, 30000);
 
     return () => clearInterval(interval);
   }, []); // Empty dependency array to run only once on mount

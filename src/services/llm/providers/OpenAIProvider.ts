@@ -85,7 +85,7 @@ export class OpenAIProvider implements LLMProviderInterface {
         model: string,
         tools: any[] | undefined,
         onChunk: (content: string) => void,
-        onToolCall: (toolCall: any) => void,
+        onToolCalls: (toolCalls: any[]) => void, // Changed to batch callback
         onComplete: () => void,
         onError: (error: string) => void
     ): Promise<void> {
@@ -197,23 +197,29 @@ export class OpenAIProvider implements LLMProviderInterface {
                                     }
                                 }
 
-                                // Check for tool call completion
+                                // Check for tool call completion - emit ALL at once
                                 if (finishReason === 'tool_calls' && toolCallAccumulator.size > 0) {
-                                    console.log(`[${this.provider}] Tool calls finished, emitting...`);
+                                    console.log(`[${this.provider}] Tool calls finished, emitting ${toolCallAccumulator.size} tool calls as batch`);
+                                    
+                                    const parsedToolCalls: any[] = [];
                                     for (const toolCall of toolCallAccumulator.values()) {
                                         try {
-                                            // Handle empty arguments gracefully
                                             const argsString = toolCall.arguments || '{}';
-                                            onToolCall({
+                                            parsedToolCalls.push({
                                                 id: toolCall.id,
                                                 name: toolCall.name,
                                                 arguments: JSON.parse(argsString)
                                             });
                                         } catch (e) {
                                             console.error(`[${this.provider}] Failed to parse tool arguments for ${toolCall.name}. Raw arguments: '${toolCall.arguments}'`);
-                                            // Try to recover with empty object if possible, or just let it fail but with better logging
                                         }
                                     }
+                                    
+                                    // Emit ALL tool calls at once
+                                    if (parsedToolCalls.length > 0) {
+                                        onToolCalls(parsedToolCalls);
+                                    }
+                                    
                                     toolCallAccumulator.clear();
                                 }
 

@@ -13,11 +13,7 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "binaries/rpg-game-state-server",
-          "sidecar": true
-        },
-        {
-          "name": "binaries/rpg-combat-engine-server",
+          "name": "binaries/rpg-mcp-server",
           "sidecar": true
         }
       ]

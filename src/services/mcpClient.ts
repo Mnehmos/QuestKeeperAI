@@ -19,20 +19,46 @@ interface JsonRpcResponse {
     };
 }
 
+// Timeout configurations for different operation types
+const TIMEOUTS = {
+    default: 30000,     // 30s for most operations
+    initialize: 10000,  // 10s for init
+    listTools: 10000,   // 10s for listing
+    complex: 60000      // 60s for complex operations
+};
+
+// Operations that may take longer
+const COMPLEX_OPERATIONS = new Set([
+    'generate_world',
+    'create_world',
+    'resolve_turn',
+    'batch_create_npcs',
+    'batch_update_npcs'
+]);
+
 export class McpClient {
     private process: Child | null = null;
-    private pendingRequests: Map<string | number, (response: JsonRpcResponse) => void> = new Map();
+    private pendingRequests: Map<string | number, { 
+        resolve: (response: JsonRpcResponse) => void;
+        timeout: NodeJS.Timeout;
+        startTime: number;
+    }> = new Map();
     private serverName: string;
-    private isConnected: boolean = false;
+    private _isConnected: boolean = false;
     private isInitialized: boolean = false;
+    private messageBuffer: string = '';
 
     constructor(serverName: string) {
         this.serverName = serverName;
     }
 
+    isConnected(): boolean {
+        return this._isConnected && this.isInitialized;
+    }
+
     async connect() {
-        if (this.isConnected) {
-            console.log(`[McpClient] ${this.serverName} already connected, skipping...`);
+        if (this._isConnected) {
+            console.log(`[McpClient] ${this.serverName} already connected`);
             return;
         }
 
@@ -41,10 +67,8 @@ export class McpClient {
             const command = Command.sidecar(`binaries/${this.serverName}`);
 
             command.on('close', (data) => {
-                console.log(`[McpClient] ${this.serverName} finished with code ${data.code} and signal ${data.signal}`);
-                this.process = null;
-                this.isConnected = false;
-                this.isInitialized = false;
+                console.log(`[McpClient] ${this.serverName} closed with code ${data.code}`);
+                this.cleanup();
             });
 
             command.on('error', (error) => {
@@ -56,12 +80,17 @@ export class McpClient {
             });
 
             command.stderr.on('data', (line) => {
-                console.error(`[McpClient] ${this.serverName} stderr: ${line}`);
+                // Only log non-routine stderr
+                if (!line.includes('[SQLite]') && !line.includes('running on stdio')) {
+                    console.warn(`[McpClient] ${this.serverName} stderr: ${line}`);
+                } else {
+                    console.log(`[McpClient] ${this.serverName}: ${line}`);
+                }
             });
 
             this.process = await command.spawn();
-            this.isConnected = true;
-            console.log(`[McpClient] ${this.serverName} spawned successfully. Pid: ${this.process.pid}`);
+            this._isConnected = true;
+            console.log(`[McpClient] ${this.serverName} spawned. PID: ${this.process.pid}`);
 
         } catch (error) {
             console.error(`[McpClient] Failed to spawn ${this.serverName}:`, error);
@@ -69,21 +98,61 @@ export class McpClient {
         }
     }
 
+    private cleanup() {
+        // Clear all pending requests
+        for (const [id, pending] of this.pendingRequests) {
+            clearTimeout(pending.timeout);
+            pending.resolve({
+                jsonrpc: '2.0',
+                id,
+                error: { code: -1, message: 'Server disconnected' }
+            });
+        }
+        this.pendingRequests.clear();
+        this.process = null;
+        this._isConnected = false;
+        this.isInitialized = false;
+    }
+
     private handleOutput(line: string) {
-        try {
-            const response = JSON.parse(line) as JsonRpcResponse;
-            if (response.id && this.pendingRequests.has(response.id)) {
-                const resolve = this.pendingRequests.get(response.id);
-                if (resolve) {
-                    resolve(response);
+        // Handle potential message fragmentation
+        this.messageBuffer += line;
+        
+        // Try to parse complete JSON messages
+        const lines = this.messageBuffer.split('\n');
+        this.messageBuffer = '';
+        
+        for (const jsonLine of lines) {
+            if (!jsonLine.trim()) continue;
+            
+            try {
+                const response = JSON.parse(jsonLine) as JsonRpcResponse;
+                
+                if (response.id && this.pendingRequests.has(response.id)) {
+                    const pending = this.pendingRequests.get(response.id)!;
+                    clearTimeout(pending.timeout);
+                    
+                    const duration = Date.now() - pending.startTime;
+                    if (duration > 5000) {
+                        console.log(`[McpClient] Slow response for ${response.id}: ${duration}ms`);
+                    }
+                    
+                    pending.resolve(response);
                     this.pendingRequests.delete(response.id);
                 }
-            } else {
-                console.log(`[McpClient] ${this.serverName} received notification or unknown response:`, response);
+                // Silently ignore responses for already-timed-out requests
+            } catch (e) {
+                // Not valid JSON, might be incomplete - buffer it
+                this.messageBuffer = jsonLine;
             }
-        } catch (e) {
-            console.log(`[McpClient] ${this.serverName} stdout: ${line}`);
         }
+    }
+
+    private getTimeout(method: string, toolName?: string): number {
+        if (method === 'initialize') return TIMEOUTS.initialize;
+        if (method === 'tools/list') return TIMEOUTS.listTools;
+        if (toolName && COMPLEX_OPERATIONS.has(toolName)) return TIMEOUTS.complex;
+        return TIMEOUTS.default;
     }
 
     private async sendRequest(method: string, params?: any): Promise<any> {
@@ -99,21 +168,28 @@ export class McpClient {
             params,
         };
 
+        const toolName = params?.name;
+        const timeoutMs = this.getTimeout(method, toolName);
+
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
+                    console.warn(`[McpClient] Request timed out: ${method} ${toolName || ''} (${timeoutMs}ms)`);
                     reject(new Error(`Request ${method} timed out`));
                 }
-            }, 10000);
+            }, timeoutMs);
 
-            this.pendingRequests.set(id, (response) => {
-                clearTimeout(timeout);
-                if (response.error) {
-                    reject(response.error);
-                } else {
-                    resolve(response.result);
-                }
+            this.pendingRequests.set(id, {
+                resolve: (response) => {
+                    if (response.error) {
+                        reject(response.error);
+                    } else {
+                        resolve(response.result);
+                    }
+                },
+                timeout,
+                startTime: Date.now()
             });
 
             const jsonString = JSON.stringify(request) + '\n';
@@ -127,7 +203,7 @@ export class McpClient {
 
     async initialize() {
         if (this.isInitialized) {
-            console.log(`[McpClient] ${this.serverName} already initialized, skipping...`);
+            console.log(`[McpClient] ${this.serverName} already initialized`);
             return;
         }
 
@@ -137,7 +213,7 @@ export class McpClient {
             capabilities: {},
             clientInfo: {
                 name: 'quest-keeper-client',
-                version: '0.1.0',
+                version: '0.2.0',
             },
         });
         this.isInitialized = true;
@@ -156,24 +232,54 @@ export class McpClient {
         });
     }
 
+    /**
+     * Execute multiple tool calls in parallel
+     * More efficient than sequential calls for independent operations
+     */
+    async callToolsBatch(calls: Array<{ name: string; args: any }>): Promise<any[]> {
+        const promises = calls.map(call => 
+            this.callTool(call.name, call.args).catch(err => ({ error: err.message }))
+        );
+        return Promise.all(promises);
+    }
+
     async disconnect() {
         if (this.process) {
             await this.process.kill();
-            this.process = null;
+            this.cleanup();
         }
+    }
+
+    /**
+     * Get count of pending requests (for debugging)
+     */
+    getPendingCount(): number {
+        return this.pendingRequests.size;
     }
 }
 
+/**
+ * McpManager - Unified MCP Server Connection
+ * 
+ * Uses single rpg-mcp-server for all RPG functionality.
+ * Provides aliases for backward compatibility.
+ */
 class McpManager {
     private static instance: McpManager;
+    
+    public unifiedClient: McpClient;
+    
+    // Aliases for backward compatibility
     public gameStateClient: McpClient;
     public combatClient: McpClient;
+    
     private isInitializing: boolean = false;
     private initPromise: Promise<void> | null = null;
 
     private constructor() {
-        this.gameStateClient = new McpClient('rpg-game-state-server');
-        this.combatClient = new McpClient('rpg-combat-engine-server');
+        this.unifiedClient = new McpClient('rpg-mcp-server');
+        this.gameStateClient = this.unifiedClient;
+        this.combatClient = this.unifiedClient;
     }
 
     public static getInstance(): McpManager {
@@ -185,19 +291,39 @@ class McpManager {
 
     async initializeAll() {
         if (this.isInitializing && this.initPromise) {
-            console.log('[McpManager] Initialization already in progress, waiting...');
+            console.log('[McpManager] Initialization in progress, waiting...');
             return this.initPromise;
         }
 
         this.isInitializing = true;
-        this.initPromise = Promise.all([
-            this.gameStateClient.connect().then(() => this.gameStateClient.initialize()),
-            this.combatClient.connect().then(() => this.combatClient.initialize()),
-        ]).then(() => {
-            this.isInitializing = false;
-        });
+        
+        this.initPromise = this.unifiedClient.connect()
+            .then(() => this.unifiedClient.initialize())
+            .then(() => {
+                console.log('[McpManager] rpg-mcp-server initialized successfully');
+                this.isInitializing = false;
+            })
+            .catch((error) => {
+                console.error('[McpManager] Failed to initialize:', error);
+                this.isInitializing = false;
+                throw error;
+            });
 
         return this.initPromise;
+    }
+
+    /**
+     * Check if the MCP server is ready
+     */
+    isReady(): boolean {
+        return this.unifiedClient.isConnected();
+    }
+
+    /**
+     * Get pending request count (for debugging)
+     */
+    getPendingCount(): number {
+        return this.unifiedClient.getPendingCount();
     }
 }
 

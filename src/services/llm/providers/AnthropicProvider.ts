@@ -10,12 +10,11 @@ export class AnthropicProvider implements LLMProviderInterface {
         model: string,
         tools?: any[]
     ): Promise<LLMResponse> {
-        // ... (rest of sendMessage implementation remains same)
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true' // Required for client-side calls
+            'anthropic-dangerous-direct-browser-access': 'true'
         };
 
         // Extract system message
@@ -113,7 +112,7 @@ export class AnthropicProvider implements LLMProviderInterface {
         model: string,
         tools: any[] | undefined,
         onChunk: (content: string) => void,
-        onToolCall: (toolCall: any) => void,
+        onToolCalls: (toolCalls: any[]) => void, // Changed to batch callback
         onComplete: () => void,
         onError: (error: string) => void
     ): Promise<void> {
@@ -202,22 +201,28 @@ export class AnthropicProvider implements LLMProviderInterface {
             const decoder = new TextDecoder();
             let buffer = '';
             
-            // Tool call accumulation
+            // Tool call accumulation - collect ALL tool calls
             let currentToolCall: { index: number; id: string; name: string; arguments: string } | null = null;
+            const completedToolCalls: any[] = [];
 
             try {
                 while (true) {
                     const { done, value } = await reader.read();
                     
                     if (done) {
-                        console.log(`[Anthropic] Stream completed`);
-                        onComplete();
+                        // Emit all collected tool calls at once when stream ends
+                        if (completedToolCalls.length > 0) {
+                            console.log(`[Anthropic] Stream ended, emitting ${completedToolCalls.length} tool call(s) as batch`);
+                            onToolCalls(completedToolCalls);
+                        } else {
+                            console.log(`[Anthropic] Stream completed (no tool calls)`);
+                            onComplete();
+                        }
                         break;
                     }
 
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
-                    // Keep the last line in the buffer if it's incomplete
                     buffer = lines.pop() || '';
 
                     for (const line of lines) {
@@ -253,8 +258,8 @@ export class AnthropicProvider implements LLMProviderInterface {
                                 case 'content_block_stop':
                                     if (currentToolCall && currentToolCall.index === event.index) {
                                         try {
-                                            console.log(`[Anthropic] Tool call finished, emitting...`);
-                                            onToolCall({
+                                            console.log(`[Anthropic] Tool call "${currentToolCall.name}" finished, collecting...`);
+                                            completedToolCalls.push({
                                                 id: currentToolCall.id,
                                                 name: currentToolCall.name,
                                                 arguments: JSON.parse(currentToolCall.arguments)
@@ -267,7 +272,12 @@ export class AnthropicProvider implements LLMProviderInterface {
                                     break;
 
                                 case 'message_stop':
-                                    // Stream is effectively done
+                                    // Message is done - emit collected tool calls
+                                    if (completedToolCalls.length > 0) {
+                                        console.log(`[Anthropic] Message stopped, emitting ${completedToolCalls.length} tool call(s) as batch`);
+                                        onToolCalls(completedToolCalls);
+                                        return; // Exit early since onToolCalls will handle completion
+                                    }
                                     break;
                                 
                                 case 'ping':
