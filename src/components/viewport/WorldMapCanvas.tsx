@@ -78,6 +78,7 @@ export const WorldMapCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const loadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fetchInProgressRef = useRef(false); // Prevent double-fetch in StrictMode
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -95,6 +96,13 @@ export const WorldMapCanvas: React.FC = () => {
       setLoading(false);
       return;
     }
+
+    // Prevent duplicate fetches (StrictMode causes double effect invocation)
+    if (fetchInProgressRef.current) {
+      console.log('[WorldMapCanvas] Fetch already in progress, skipping duplicate');
+      return;
+    }
+    fetchInProgressRef.current = true;
 
     setLoading(true);
     setError(null);
@@ -135,6 +143,7 @@ export const WorldMapCanvas: React.FC = () => {
       }
     } finally {
       setLoading(false);
+      fetchInProgressRef.current = false;
       if (loadingTimerRef.current) {
         clearInterval(loadingTimerRef.current);
         loadingTimerRef.current = null;
@@ -243,8 +252,9 @@ export const WorldMapCanvas: React.FC = () => {
     const rect = canvas.getBoundingClientRect();
     const tileSize = TILE_SIZE * zoom;
 
-    const x = Math.floor((e.clientX - rect.left + offset.x) / tileSize);
-    const y = Math.floor((e.clientY - rect.top + offset.y) / tileSize);
+    // getBoundingClientRect already accounts for CSS transform, so don't add offset
+    const x = Math.floor((e.clientX - rect.left) / tileSize);
+    const y = Math.floor((e.clientY - rect.top) / tileSize);
 
     if (x < 0 || x >= tileData.width || y < 0 || y >= tileData.height) {
       setTooltip(null);
@@ -277,7 +287,7 @@ export const WorldMapCanvas: React.FC = () => {
       x: e.clientX - rect.left + 15,
       y: e.clientY - rect.top + 15,
     });
-  }, [tileData, zoom, offset, isDragging]);
+  }, [tileData, zoom, isDragging]);
 
   // Handle zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
