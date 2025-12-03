@@ -18,7 +18,7 @@ const QuickStats = () => {
 
     return (
         <>
-            <div className="w-80 border-l border-terminal-green-dim bg-terminal-black/50 flex flex-col p-4 gap-6 overflow-y-auto">
+            <div className="w-64 lg:w-80 min-w-0 shrink-0 border-l border-terminal-green-dim bg-terminal-black/50 flex flex-col p-3 lg:p-4 gap-4 lg:gap-6 overflow-y-auto">
                 {/* Character Management Header */}
                 <div>
                     <div className="flex items-center justify-between mb-3">
@@ -68,7 +68,7 @@ const QuickStats = () => {
                     </h3>
                     {activeCharacter ? (
                         <div className="bg-terminal-green/5 p-3 rounded border border-terminal-green/20">
-                            <div className="font-bold text-lg text-terminal-green-bright">{activeCharacter.name}</div>
+                            <div className="font-bold text-lg text-terminal-green-bright truncate" title={activeCharacter.name}>{activeCharacter.name}</div>
                             <div className="text-xs text-terminal-green/70 mb-2">Level {activeCharacter.level} {activeCharacter.class}</div>
 
                             {/* HP Bar */}
@@ -159,8 +159,8 @@ const QuickStats = () => {
                         </div>
 
                         <div className="flex items-center gap-2 text-terminal-green-bright mb-1">
-                            <span>🌍</span>
-                            <span className="font-bold">{world.location || 'Unknown Location'}</span>
+                            <span className="shrink-0">🌍</span>
+                            <span className="font-bold truncate" title={world.location || 'Unknown Location'}>{world.location || 'Unknown Location'}</span>
                         </div>
                         <div className="text-xs text-terminal-green/70 pl-6 space-y-1">
                             <div>Time: {world.time || 'Unknown'}</div>
@@ -181,9 +181,9 @@ const QuickStats = () => {
 
 export const AdventureView: React.FC = () => {
     return (
-        <div className="flex h-full w-full bg-terminal-black">
+        <div className="flex h-full w-full bg-terminal-black overflow-hidden">
             {/* Narrative Panel (Chat) */}
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <ChatHistory />
                 <ChatInput />
             </div>
