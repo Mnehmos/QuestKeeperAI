@@ -15,7 +15,12 @@
       "Bash(nvm version:*)",
       "Bash(del \"\\?\\C:\\Users\\Vario\\OneDrive\\Desktop\\QuestKeeperAI-v2\\nul\")",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm install:*)",
+      "Bash(del /f \"src\\stores\\combatStore.ts.backup\")",
+      "Bash(del /f \"src\\components\\viewport\\WorldMapCanvas_BACKUP.tsx\")",
+      "Bash(npm uninstall:*)",
+      "Bash(git push)"
     ],
     "deny": [],
     "ask": []
