@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useGameStateStore } from '../../stores/gameStateStore';
+import { usePartyStore } from '../../stores/partyStore';
 import { mcpManager } from '../../services/mcpClient';
 import { WorldEnvironmentOverlay } from './WorldEnvironmentOverlay';
 import { POIDetailPanel } from './POIDetailPanel';
@@ -84,6 +85,12 @@ export const WorldMapCanvas: React.FC = () => {
   const setActiveWorldId = useGameStateStore((state) => state.setActiveWorldId);
   const worlds = useGameStateStore((state) => state.worlds);
   const world = useGameStateStore((state) => state.world);
+
+  // Party store for position tracking
+  const activePartyId = usePartyStore((state) => state.activePartyId);
+  const getActivePartyPosition = usePartyStore((state) => state.getActivePartyPosition);
+  const moveParty = usePartyStore((state) => state.moveParty);
+  const isPartyLoading = usePartyStore((state) => state.isLoading);
   
   const [tileData, setTileData] = useState<TileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,6 +101,7 @@ export const WorldMapCanvas: React.FC = () => {
   const [selectedPOI, setSelectedPOI] = useState<{ type: string; name: string; x: number; y: number } | null>(null);
   const [hoveredPOI, setHoveredPOI] = useState<{ x: number; y: number } | null>(null);
   const [visualizationMode, setVisualizationMode] = useState<VisualizationMode>('biomes');
+  const [isMovingParty, setIsMovingParty] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -112,6 +120,9 @@ export const WorldMapCanvas: React.FC = () => {
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   const activeWorld = worlds.find(w => w.id === activeWorldId);
+
+  // Get party position - memoized to avoid unnecessary re-renders
+  const partyPosition = getActivePartyPosition();
 
   // Track container size
   useEffect(() => {
@@ -419,7 +430,44 @@ export const WorldMapCanvas: React.FC = () => {
         ctx.stroke();
       }
     }
-  }, [tileData, zoom, visualizationMode, hoveredPOI, getTileColor]);
+
+    // Draw party marker
+    if (partyPosition && partyPosition.x >= 0 && partyPosition.y >= 0 &&
+        partyPosition.x < width && partyPosition.y < height) {
+      const px = partyPosition.x * tileSize + tileSize / 2;
+      const py = partyPosition.y * tileSize + tileSize / 2;
+      const markerSize = Math.max(tileSize * 1.2, 20);
+
+      // Outer glow/pulse effect
+      ctx.save();
+      ctx.shadowColor = '#ff6b00';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = 'rgba(255, 107, 0, 0.4)';
+      ctx.beginPath();
+      ctx.arc(px, py, markerSize * 0.9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Inner circle background
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+      ctx.beginPath();
+      ctx.arc(px, py, markerSize * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = '#ff6b00';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(px, py, markerSize * 0.7, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Party icon (sword crossed with shield style)
+      ctx.font = `${Math.max(16, markerSize * 0.8)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⚔️', px, py);
+    }
+  }, [tileData, zoom, visualizationMode, hoveredPOI, getTileColor, partyPosition]);
 
   // Handle mouse move - tooltip position relative to CONTAINER, not canvas
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -569,6 +617,20 @@ export const WorldMapCanvas: React.FC = () => {
         case 'F':
           fitToView();
           break;
+        case 'p':
+        case 'P':
+          // Center on party
+          if (containerRef.current && partyPosition) {
+            const container = containerRef.current;
+            const tileSize = TILE_SIZE * zoom;
+            const partyX = partyPosition.x * tileSize + tileSize / 2;
+            const partyY = partyPosition.y * tileSize + tileSize / 2;
+            setOffset({
+              x: container.clientWidth / 2 - partyX,
+              y: container.clientHeight / 2 - partyY,
+            });
+          }
+          break;
         case 'ArrowUp':
           e.preventDefault();
           setOffset(prev => ({ ...prev, y: prev.y + 50 }));
@@ -590,7 +652,7 @@ export const WorldMapCanvas: React.FC = () => {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPOI, zoom, lastMousePos, zoomAtPoint, resetView, fitToView]);
+  }, [selectedPOI, zoom, lastMousePos, zoomAtPoint, resetView, fitToView, partyPosition]);
 
   // Calculate minimap viewport indicator
   const getMinimapViewport = useCallback(() => {
@@ -744,6 +806,25 @@ export const WorldMapCanvas: React.FC = () => {
 
           {/* View Controls */}
           <div className="flex items-center gap-1">
+            {partyPosition && (
+              <button
+                onClick={() => {
+                  if (!containerRef.current || !partyPosition) return;
+                  const container = containerRef.current;
+                  const tileSize = TILE_SIZE * zoom;
+                  const partyX = partyPosition.x * tileSize + tileSize / 2;
+                  const partyY = partyPosition.y * tileSize + tileSize / 2;
+                  setOffset({
+                    x: container.clientWidth / 2 - partyX,
+                    y: container.clientHeight / 2 - partyY,
+                  });
+                }}
+                className="px-2 py-1 text-xs bg-orange-500/20 border border-orange-500/50 hover:bg-orange-500/30 transition-colors text-orange-400"
+                title="Center on Party (P)"
+              >
+                ⚔️
+              </button>
+            )}
             <button
               onClick={fitToView}
               className="px-2 py-1 text-xs bg-terminal-green/10 border border-terminal-green-dim hover:bg-terminal-green/20 transition-colors"
@@ -872,9 +953,37 @@ export const WorldMapCanvas: React.FC = () => {
             poi={selectedPOI}
             biome={tooltip?.biome}
             region={tooltip?.region || undefined}
+            partyPosition={partyPosition || undefined}
+            isMoving={isMovingParty || isPartyLoading}
             onClose={() => setSelectedPOI(null)}
-            onEnter={() => {
-              console.log('Enter location:', selectedPOI.name);
+            onEnter={async () => {
+              if (!activePartyId) {
+                console.warn('No active party to move');
+                return;
+              }
+
+              setIsMovingParty(true);
+              try {
+                // Move party to the selected POI
+                const success = await moveParty(
+                  activePartyId,
+                  selectedPOI.x,
+                  selectedPOI.y,
+                  selectedPOI.name,
+                  undefined // POI ID - we could look this up from structures if needed
+                );
+
+                if (success) {
+                  console.log('Party moved to:', selectedPOI.name);
+                  setSelectedPOI(null);
+                } else {
+                  console.error('Failed to move party');
+                }
+              } catch (error) {
+                console.error('Error moving party:', error);
+              } finally {
+                setIsMovingParty(false);
+              }
             }}
           />
         )}

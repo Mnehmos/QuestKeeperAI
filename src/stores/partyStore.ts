@@ -10,6 +10,13 @@ export type PartyStatus = 'active' | 'dormant' | 'archived';
 export type MemberRole = 'leader' | 'member' | 'companion' | 'hireling' | 'prisoner' | 'mount';
 export type CharacterType = 'pc' | 'npc' | 'enemy' | 'neutral';
 
+export interface PartyPosition {
+  x: number;
+  y: number;
+  locationName: string;
+  poiId?: string;
+}
+
 export interface Party {
   id: string;
   name: string;
@@ -19,6 +26,10 @@ export interface Party {
   currentLocation?: string;
   currentQuestId?: string;
   formation: string;
+  // Position fields for world map
+  positionX?: number;
+  positionY?: number;
+  currentPOI?: string;
   createdAt: string;
   updatedAt: string;
   lastPlayedAt?: string;
@@ -125,8 +136,13 @@ interface PartyState {
   // Context for LLM
   getPartyContext: (partyId: string, verbosity?: 'minimal' | 'standard' | 'detailed') => Promise<PartyContext | null>;
 
+  // Party Movement
+  moveParty: (partyId: string, targetX: number, targetY: number, locationName: string, poiId?: string) => Promise<boolean>;
+  getPartyPosition: (partyId: string) => Promise<PartyPosition | null>;
+
   // Selectors (computed from state)
   getActiveParty: () => PartyWithMembers | null;
+  getActivePartyPosition: () => PartyPosition | null;
   getLeader: () => PartyMemberWithCharacter | null;
   getActiveCharacterMember: () => PartyMemberWithCharacter | null;
 }
@@ -147,6 +163,10 @@ function parseParty(data: any): Party | null {
     currentLocation: data.currentLocation || data.current_location,
     currentQuestId: data.currentQuestId || data.current_quest_id,
     formation: data.formation || 'standard',
+    // Position fields
+    positionX: data.positionX ?? data.position_x,
+    positionY: data.positionY ?? data.position_y,
+    currentPOI: data.currentPOI || data.current_poi,
     createdAt: data.createdAt || data.created_at || new Date().toISOString(),
     updatedAt: data.updatedAt || data.updated_at || new Date().toISOString(),
     lastPlayedAt: data.lastPlayedAt || data.last_played_at,
@@ -685,6 +705,84 @@ export const usePartyStore = create<PartyState>()(
       },
 
       // ============================================
+      // Party Movement
+      // ============================================
+
+      moveParty: async (partyId, targetX, targetY, locationName, poiId) => {
+        set({ isLoading: true, error: null });
+
+        try {
+          const { mcpManager } = await import('../services/mcpClient');
+
+          console.log('[PartyStore] Moving party:', partyId, 'to', targetX, targetY, locationName);
+          const result = await mcpManager.gameStateClient.callTool('move_party', {
+            partyId,
+            targetX,
+            targetY,
+            locationName,
+            poiId,
+          });
+
+          const data = parseMcpResponse<any>(result, null);
+
+          if (data?.success) {
+            console.log('[PartyStore] Party moved successfully:', data);
+
+            // Update local party data with new position
+            set((state) => {
+              const updatedPartyDetails = { ...state.partyDetails };
+              if (updatedPartyDetails[partyId]) {
+                updatedPartyDetails[partyId] = {
+                  ...updatedPartyDetails[partyId],
+                  positionX: targetX,
+                  positionY: targetY,
+                  currentLocation: locationName,
+                  currentPOI: poiId,
+                };
+              }
+              return { partyDetails: updatedPartyDetails };
+            });
+
+            // Refresh party details to ensure sync with backend
+            await get().syncPartyDetails(partyId);
+
+            return true;
+          }
+
+          throw new Error(data?.error || 'Failed to move party');
+        } catch (error: any) {
+          console.error('[PartyStore] Move party error:', error);
+          set({ error: error.message || 'Failed to move party' });
+          return false;
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      getPartyPosition: async (partyId) => {
+        try {
+          const { mcpManager } = await import('../services/mcpClient');
+
+          const result = await mcpManager.gameStateClient.callTool('get_party_position', { partyId });
+          const data = parseMcpResponse<any>(result, null);
+
+          if (data?.success && data?.position) {
+            return {
+              x: data.position.x,
+              y: data.position.y,
+              locationName: data.position.locationName || 'Unknown',
+              poiId: data.position.poiId,
+            };
+          }
+
+          return null;
+        } catch (error: any) {
+          console.error('[PartyStore] Get party position error:', error);
+          return null;
+        }
+      },
+
+      // ============================================
       // Selectors
       // ============================================
 
@@ -692,6 +790,19 @@ export const usePartyStore = create<PartyState>()(
         const { activePartyId, partyDetails } = get();
         if (!activePartyId) return null;
         return partyDetails[activePartyId] || null;
+      },
+
+      getActivePartyPosition: () => {
+        const activeParty = get().getActiveParty();
+        if (!activeParty || activeParty.positionX === undefined || activeParty.positionY === undefined) {
+          return null;
+        }
+        return {
+          x: activeParty.positionX,
+          y: activeParty.positionY,
+          locationName: activeParty.currentLocation || 'Unknown',
+          poiId: activeParty.currentPOI,
+        };
       },
 
       getLeader: () => {

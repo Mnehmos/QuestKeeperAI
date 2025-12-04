@@ -229,9 +229,7 @@ export const useChatStore = create<ChatState>()(
                             toolName: toolCall.name,
                             toolArguments: toolCall.arguments,
                             toolStatus: 'pending',
-                            serverName: toolCall.name.startsWith('game')
-                              ? 'game-state-server'
-                              : 'combat-engine-server',
+                            serverName: 'rpg-mcp-server',
                           }
                         : msg
                     ),

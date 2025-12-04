@@ -20,7 +20,11 @@
       "Bash(del /f \"src\\stores\\combatStore.ts.backup\")",
       "Bash(del /f \"src\\components\\viewport\\WorldMapCanvas_BACKUP.tsx\")",
       "Bash(npm uninstall:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(findstr:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []
