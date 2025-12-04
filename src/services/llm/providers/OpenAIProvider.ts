@@ -66,11 +66,26 @@ export class OpenAIProvider implements LLMProviderInterface {
             };
 
             if (message.tool_calls) {
-                result.toolCalls = message.tool_calls.map((tc: any) => ({
-                    id: tc.id,
-                    name: tc.function.name,
-                    arguments: JSON.parse(tc.function.arguments),
-                }));
+                result.toolCalls = [];
+                for (const tc of message.tool_calls) {
+                    try {
+                        result.toolCalls.push({
+                            id: tc.id,
+                            name: tc.function.name,
+                            arguments: JSON.parse(tc.function.arguments),
+                        });
+                    } catch (parseError) {
+                        console.error(`[${this.provider}] Failed to parse tool arguments for ${tc.function.name}:`, parseError);
+                        console.error(`[${this.provider}] Raw arguments: '${tc.function.arguments}'`);
+                        // Include the tool call with empty arguments so the error can be reported back
+                        result.toolCalls.push({
+                            id: tc.id,
+                            name: tc.function.name,
+                            arguments: {},
+                            parseError: `Failed to parse arguments: ${tc.function.arguments}`,
+                        });
+                    }
+                }
             }
 
             return result;

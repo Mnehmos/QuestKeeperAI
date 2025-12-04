@@ -1,12 +1,15 @@
 /**
  * MCP Response Utilities
- * 
+ *
  * Handles parsing of MCP tool responses which can come in two formats:
  * 1. MCP content wrapper: { content: [{ type: 'text', text: '...' }] }
  * 2. Direct JSON: { characters: [...], count: 1 }
- * 
+ *
  * Also provides batch execution utilities for parallel tool calls.
  */
+
+// Debug logging flag - set to true only during development
+const DEBUG_MCP_PARSING = false;
 
 /**
  * Extract data from MCP tool response
@@ -14,55 +17,61 @@
  */
 export function parseMcpResponse<T>(result: any, fallback: T): T {
   if (result === null || result === undefined) {
-    console.log('[parseMcpResponse] Result is null/undefined, using fallback');
+    if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] Result is null/undefined, using fallback');
     return fallback;
   }
 
-  console.log('[parseMcpResponse] Input type:', typeof result);
-  console.log('[parseMcpResponse] Input keys:', typeof result === 'object' ? Object.keys(result) : 'N/A');
-  
-  // Safe stringify for logging
-  try {
-    const logStr = JSON.stringify(result);
-    console.log('[parseMcpResponse] Full input:', logStr.slice(0, 500));
-  } catch {
-    console.log('[parseMcpResponse] Could not stringify input');
+  if (DEBUG_MCP_PARSING) {
+    console.log('[parseMcpResponse] Input type:', typeof result);
+    console.log('[parseMcpResponse] Input keys:', typeof result === 'object' ? Object.keys(result) : 'N/A');
+
+    // Safe stringify for logging - avoid logging full payloads in production
+    try {
+      const logStr = JSON.stringify(result);
+      console.log('[parseMcpResponse] Full input:', logStr.slice(0, 500));
+    } catch {
+      console.log('[parseMcpResponse] Could not stringify input');
+    }
   }
 
   // Case 1: Direct JSON response (no content wrapper)
   // This happens when the response is already parsed JSON
   if (typeof result === 'object' && !('content' in result)) {
-    console.log('[parseMcpResponse] Case 1: Direct JSON (no content wrapper)');
+    if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] Case 1: Direct JSON (no content wrapper)');
     return result as T;
   }
 
   // Case 2: MCP content wrapper format
   // { content: [{ type: 'text', text: '...' }] }
   if (result?.content && Array.isArray(result.content)) {
-    console.log('[parseMcpResponse] Case 2: MCP content wrapper, items:', result.content.length);
-    
-    if (result.content[0]) {
-      console.log('[parseMcpResponse] Content[0] type:', result.content[0].type);
-      console.log('[parseMcpResponse] Content[0] keys:', Object.keys(result.content[0]));
+    if (DEBUG_MCP_PARSING) {
+      console.log('[parseMcpResponse] Case 2: MCP content wrapper, items:', result.content.length);
+
+      if (result.content[0]) {
+        console.log('[parseMcpResponse] Content[0] type:', result.content[0].type);
+        console.log('[parseMcpResponse] Content[0] keys:', Object.keys(result.content[0]));
+      }
     }
-    
+
     const textContent = result.content.find((c: any) => c.type === 'text');
-    console.log('[parseMcpResponse] Found text content:', !!textContent);
-    
+    if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] Found text content:', !!textContent);
+
     if (textContent?.text) {
-      console.log('[parseMcpResponse] Text value (first 300 chars):', String(textContent.text).slice(0, 300));
+      if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] Text value (first 300 chars):', String(textContent.text).slice(0, 300));
       // Try to parse as JSON
       try {
         const parsed = JSON.parse(textContent.text);
-        console.log('[parseMcpResponse] Successfully parsed JSON');
-        console.log('[parseMcpResponse] Parsed keys:', Object.keys(parsed));
+        if (DEBUG_MCP_PARSING) {
+          console.log('[parseMcpResponse] Successfully parsed JSON');
+          console.log('[parseMcpResponse] Parsed keys:', Object.keys(parsed));
+        }
         return parsed as T;
-      } catch (e) {
-        console.log('[parseMcpResponse] JSON parse failed, returning raw text');
+      } catch {
+        if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] JSON parse failed, returning raw text');
         // If not JSON, return the text as-is (for simple responses like dice rolls)
         return textContent.text as unknown as T;
       }
-    } else {
+    } else if (DEBUG_MCP_PARSING) {
       console.log('[parseMcpResponse] No text property found in content item');
       if (result.content[0]) {
         console.log('[parseMcpResponse] Content[0] full:', JSON.stringify(result.content[0]).slice(0, 200));
@@ -72,11 +81,11 @@ export function parseMcpResponse<T>(result: any, fallback: T): T {
 
   // Case 3: Simple value (number, string, etc.)
   if (typeof result === 'number' || typeof result === 'string' || typeof result === 'boolean') {
-    console.log('[parseMcpResponse] Case 3: Simple value:', result);
+    if (DEBUG_MCP_PARSING) console.log('[parseMcpResponse] Case 3: Simple value:', result);
     return result as unknown as T;
   }
 
-  console.warn('[parseMcpResponse] Could not parse response, using fallback');
+  if (DEBUG_MCP_PARSING) console.warn('[parseMcpResponse] Could not parse response, using fallback');
   return fallback;
 }
 

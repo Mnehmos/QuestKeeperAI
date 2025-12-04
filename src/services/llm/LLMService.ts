@@ -244,7 +244,7 @@ class LLMService {
         return finalContent;
     }
 
-    // Streaming method
+    // Streaming method with iterative loop and max-turn guard (matches sendMessage behavior)
     public async streamMessage(
         history: ChatMessage[],
         callbacks: {
@@ -256,6 +256,8 @@ class LLMService {
             onError: (error: string) => void;
         }
     ): Promise<void> {
+        const MAX_TOOL_TURNS = 5; // Same limit as sendMessage to prevent infinite loops
+
         try {
             const provider = this.getProvider();
             const apiKey = this.getApiKey();
@@ -271,75 +273,92 @@ class LLMService {
                 allTools = [];
             }
 
-            await (provider as any).streamMessage(
-                history,
-                apiKey,
-                model,
-                allTools,
-                callbacks.onChunk,
-                // Handle ALL tool calls as a batch
-                async (toolCalls: any[]) => {
-                    console.log(`[LLMService] Received ${toolCalls.length} tool call(s)`);
-                    
-                    // Notify UI about each tool call
-                    for (const toolCall of toolCalls) {
-                        callbacks.onToolCall(toolCall);
-                    }
+            let currentHistory = [...history];
+            let turnCount = 0;
+            let continueLoop = true;
 
-                    // Execute ALL tool calls in parallel
-                    const results = await this.executeToolCallsBatch(toolCalls);
+            while (continueLoop && turnCount < MAX_TOOL_TURNS) {
+                continueLoop = false; // Will be set to true if tool calls are received
 
-                    // Process results
-                    const toolResults: { toolCall: any; result: any }[] = [];
-                    
-                    for (const toolCall of toolCalls) {
-                        const result = results.get(toolCall.id);
-                        
-                        console.log(`[LLMService] Tool result for ${toolCall.name}:`, result);
-                        callbacks.onToolResult(toolCall.name, result);
+                await new Promise<void>((resolve, reject) => {
+                    (provider as any).streamMessage(
+                        currentHistory,
+                        apiKey,
+                        model,
+                        allTools,
+                        callbacks.onChunk,
+                        // Handle ALL tool calls as a batch
+                        async (toolCalls: any[]) => {
+                            turnCount++;
+                            console.log(`[LLMService] Turn ${turnCount}: Received ${toolCalls.length} tool call(s)`);
 
-                        await this.parseToolResult(toolCall.name, result);
-                        toolResults.push({ toolCall, result });
-                    }
-
-                    // Sync state ONCE after all tools complete
-                    const toolNames = toolCalls.map(tc => tc.name);
-                    await this.handleBatchToolSync(toolNames);
-
-                    // Build history with ALL tool calls and results
-                    const newHistory = [...history];
-                    
-                    // Add assistant's message with ALL tool calls
-                    newHistory.push({
-                        role: 'assistant',
-                        content: '',
-                        toolCalls: toolResults.map(({ toolCall }) => ({
-                            id: toolCall.id,
-                            type: 'function',
-                            function: {
-                                name: toolCall.name,
-                                arguments: JSON.stringify(toolCall.arguments)
+                            if (turnCount >= MAX_TOOL_TURNS) {
+                                console.warn(`[LLMService] Max tool turns (${MAX_TOOL_TURNS}) reached, stopping tool execution`);
+                                return;
                             }
-                        }))
-                    } as any);
 
-                    // Add ALL tool results
-                    for (const { toolCall, result } of toolResults) {
-                        newHistory.push({
-                            role: 'tool',
-                            content: JSON.stringify(result),
-                            toolCallId: toolCall.id
-                        } as any);
-                    }
+                            // Notify UI about each tool call
+                            for (const toolCall of toolCalls) {
+                                callbacks.onToolCall(toolCall);
+                            }
 
-                    callbacks.onStreamStart();
-                    
-                    // Single recursive call with all results
-                    await this.streamMessage(newHistory, callbacks);
-                },
-                callbacks.onComplete,
-                callbacks.onError
-            );
+                            // Execute ALL tool calls in parallel
+                            const results = await this.executeToolCallsBatch(toolCalls);
+
+                            // Process results
+                            const toolResults: { toolCall: any; result: any }[] = [];
+
+                            for (const toolCall of toolCalls) {
+                                const result = results.get(toolCall.id);
+
+                                callbacks.onToolResult(toolCall.name, result);
+
+                                await this.parseToolResult(toolCall.name, result);
+                                toolResults.push({ toolCall, result });
+                            }
+
+                            // Sync state ONCE after all tools complete
+                            const toolNames = toolCalls.map(tc => tc.name);
+                            await this.handleBatchToolSync(toolNames);
+
+                            // Build updated history with ALL tool calls and results
+                            // Add assistant's message with ALL tool calls
+                            currentHistory.push({
+                                role: 'assistant',
+                                content: '',
+                                toolCalls: toolResults.map(({ toolCall }) => ({
+                                    id: toolCall.id,
+                                    type: 'function',
+                                    function: {
+                                        name: toolCall.name,
+                                        arguments: JSON.stringify(toolCall.arguments)
+                                    }
+                                }))
+                            } as any);
+
+                            // Add ALL tool results
+                            for (const { toolCall, result } of toolResults) {
+                                currentHistory.push({
+                                    role: 'tool',
+                                    content: JSON.stringify(result),
+                                    toolCallId: toolCall.id
+                                } as any);
+                            }
+
+                            callbacks.onStreamStart();
+                            continueLoop = true; // Continue to next iteration
+                        },
+                        () => resolve(), // onComplete
+                        (error: string) => reject(new Error(error)) // onError
+                    );
+                });
+            }
+
+            if (turnCount >= MAX_TOOL_TURNS) {
+                console.warn(`[LLMService] Streaming ended: max tool turns (${MAX_TOOL_TURNS}) reached`);
+            }
+
+            callbacks.onComplete();
 
         } catch (error: any) {
             console.error('[LLMService] Streaming error:', error);

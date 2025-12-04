@@ -44,6 +44,11 @@ Lightweight-CRM---Invoice/
 # Deprecated components (old MCP servers)
 _deprecated/
 
+# Backup files
+*.backup
+*_BACKUP.*
+*_BACKUP_*
+
 # Windows reserved filenames (can't be deleted normally)
 nul
 con

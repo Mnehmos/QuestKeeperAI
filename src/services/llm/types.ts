@@ -16,6 +16,7 @@ export interface ToolCall {
     id?: string;
     name: string;
     arguments: any;
+    parseError?: string; // Set when argument parsing fails
 }
 
 export interface LLMProviderInterface {

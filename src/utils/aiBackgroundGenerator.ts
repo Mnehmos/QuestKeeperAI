@@ -3,7 +3,7 @@
  * Uses the configured LLM provider to generate contextual character backstories
  */
 
-import { useSettingsStore, LLMProvider } from '../stores/settingsStore';
+import { useSettingsStore } from '../stores/settingsStore';
 
 interface CharacterContext {
     name: string;

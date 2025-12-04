@@ -160,9 +160,7 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
       }
     }
     
-    // Clear the previous assignment at this index
-    const previousAbility = newAssignments[arrayIndex];
-    
+    // Clear the previous assignment at this index (if any)
     newAssignments[arrayIndex] = ability;
     setStandardArrayAssignments(newAssignments);
     
@@ -204,29 +202,11 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({
     setError(null);
 
     try {
-      // Build a prompt for the AI
-      const actualRace = race === 'Other' ? customRace : race;
+      // Get resolved class name (handle custom class option)
       const actualClass = charClass === 'Other' ? customClass : charClass;
-      
-      const prompt = `Generate a brief but evocative backstory and personality traits for a D&D character:
-Name: ${name}
-Race: ${actualRace}
-Class: ${actualClass}
-Level: ${level}
-${enhancePrompt ? `Additional context: ${enhancePrompt}` : ''}
 
-Please provide:
-1. A 2-3 sentence backstory that hints at their past
-2. 2-3 personality traits or quirks
-
-Keep it concise and interesting. Format as:
-BACKSTORY: [backstory text]
-PERSONALITY: [traits]`;
-
-      // Use the chat completion if available, otherwise provide placeholder
-      // For now, we'll generate some reasonable defaults based on the inputs
-      // In a full implementation, this would call an LLM API
-      
+      // TODO: In future, use LLM API to generate personalized backstory
+      // For now, we generate defaults based on class
       const backstories: Record<string, string> = {
         'Fighter': `${name} was forged in the crucible of war, learning to fight before learning to read. The scars they carry tell stories of battles won and comrades lost.`,
         'Wizard': `${name} discovered magic in the dusty tomes of an abandoned library, spending years mastering arcane arts that others deemed forbidden.`,
