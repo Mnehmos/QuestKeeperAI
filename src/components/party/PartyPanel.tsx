@@ -3,6 +3,7 @@ import { usePartyStore, PartyMemberWithCharacter, MemberRole } from '../../store
 
 interface PartyPanelProps {
   onAddMember?: () => void;
+  onCreateCharacter?: () => void;
   onCreateParty?: () => void;
   compact?: boolean;
 }
@@ -15,7 +16,12 @@ const FORMATION_OPTIONS = [
   { value: 'scattered', label: 'Scattered', icon: '* *' },
 ];
 
-export const PartyPanel: React.FC<PartyPanelProps> = ({ onAddMember, onCreateParty, compact = false }) => {
+export const PartyPanel: React.FC<PartyPanelProps> = ({ 
+  onAddMember, 
+  onCreateCharacter, 
+  onCreateParty, 
+  compact = false 
+}) => {
   const [showFormation, setShowFormation] = useState(false);
   const [expandedMember, setExpandedMember] = useState<string | null>(null);
 
@@ -33,14 +39,24 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({ onAddMember, onCreatePar
     return (
       <div className="p-4 text-center">
         <div className="text-terminal-green/50 text-sm mb-3">No party selected</div>
-        {onCreateParty && (
-          <button
-            onClick={onCreateParty}
-            className="px-4 py-2 bg-terminal-green/10 border border-terminal-green text-terminal-green text-sm rounded hover:bg-terminal-green/20 transition-colors"
-          >
-            + Create Party
-          </button>
-        )}
+        <div className="flex flex-col gap-2">
+          {onCreateParty && (
+            <button
+              onClick={onCreateParty}
+              className="px-4 py-2 bg-terminal-green/10 border border-terminal-green text-terminal-green text-sm rounded hover:bg-terminal-green/20 transition-colors"
+            >
+              + Create Party
+            </button>
+          )}
+          {onCreateCharacter && (
+            <button
+              onClick={onCreateCharacter}
+              className="px-4 py-2 bg-purple-600/20 border border-purple-500 text-purple-300 text-sm rounded hover:bg-purple-600/30 transition-colors"
+            >
+              ⚔️ Create Character
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -263,6 +279,17 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({ onAddMember, onCreatePar
             )}
           </div>
 
+          {/* Create Character Button */}
+          {onCreateCharacter && (
+            <button
+              onClick={onCreateCharacter}
+              className="px-2 py-1 text-xs bg-purple-600/20 border border-purple-500/50 text-purple-300 rounded hover:bg-purple-600/30 transition-colors"
+              title="Create Character"
+            >
+              ⚔️
+            </button>
+          )}
+
           {/* Add Member Button */}
           {onAddMember && (
             <button
@@ -283,14 +310,24 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({ onAddMember, onCreatePar
         ) : (
           <div className="text-center text-terminal-green/50 text-sm py-4">
             No members in party
-            {onAddMember && (
-              <button
-                onClick={onAddMember}
-                className="block mx-auto mt-2 px-3 py-1 text-xs bg-terminal-green/10 border border-terminal-green text-terminal-green rounded hover:bg-terminal-green/20 transition-colors"
-              >
-                + Add Character
-              </button>
-            )}
+            <div className="flex flex-col gap-2 mt-3">
+              {onCreateCharacter && (
+                <button
+                  onClick={onCreateCharacter}
+                  className="mx-auto px-3 py-1 text-xs bg-purple-600/20 border border-purple-500 text-purple-300 rounded hover:bg-purple-600/30 transition-colors"
+                >
+                  ⚔️ Create Character
+                </button>
+              )}
+              {onAddMember && (
+                <button
+                  onClick={onAddMember}
+                  className="mx-auto px-3 py-1 text-xs bg-terminal-green/10 border border-terminal-green text-terminal-green rounded hover:bg-terminal-green/20 transition-colors"
+                >
+                  + Add Existing
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

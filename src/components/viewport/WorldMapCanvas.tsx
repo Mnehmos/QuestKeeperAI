@@ -27,7 +27,7 @@ const BIOME_COLORS: Record<string, string> = {
   snow: '#fffafa',
 };
 
-// Structure icons - larger and more prominent
+// Structure icons
 const STRUCTURE_ICONS: Record<string, string> = {
   city: '🏙️',
   town: '🏘️',
@@ -74,8 +74,14 @@ interface TooltipData {
   hasRiver: boolean;
 }
 
+const TILE_SIZE = 10;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 6;
+const ZOOM_STEP = 0.15;
+
 export const WorldMapCanvas: React.FC = () => {
   const activeWorldId = useGameStateStore((state) => state.activeWorldId);
+  const setActiveWorldId = useGameStateStore((state) => state.setActiveWorldId);
   const worlds = useGameStateStore((state) => state.worlds);
   const world = useGameStateStore((state) => state.world);
   
@@ -93,14 +99,35 @@ export const WorldMapCanvas: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const loadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchInProgressRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   
+  // Pan & Zoom state
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  
+  // Container size for minimap (updated on resize)
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-  const TILE_SIZE = 10;
   const activeWorld = worlds.find(w => w.id === activeWorldId);
+
+  // Track container size
+  useEffect(() => {
+    const updateSize = () => {
+      if (containerRef.current) {
+        setContainerSize({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
+    
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
 
   // Get tile color based on visualization mode
   const getTileColor = useCallback((
@@ -113,15 +140,12 @@ export const WorldMapCanvas: React.FC = () => {
 
     switch (mode) {
       case 'heightmap': {
-        // Grayscale based on elevation (0-100)
         const gray = Math.floor((elevation / 100) * 255);
         return `rgb(${gray}, ${gray}, ${gray})`;
       }
 
       case 'temperature': {
-        // Blue (cold) to red (hot) gradient
-        // Assume elevation affects temperature: higher = colder
-        const temp = 100 - elevation * 0.3; // Simple temperature model
+        const temp = 100 - elevation * 0.3;
         const normalized = Math.max(0, Math.min(100, temp)) / 100;
         const r = Math.floor(normalized * 255);
         const b = Math.floor((1 - normalized) * 255);
@@ -129,12 +153,9 @@ export const WorldMapCanvas: React.FC = () => {
       }
 
       case 'moisture': {
-        // Brown (dry) to blue-green (wet)
-        const isMoist = hasRiver || isWater;
         if (isWater) return '#1e90ff';
-        if (isMoist) return '#4682b4';
+        if (hasRiver) return '#4682b4';
         
-        // Dry land - brown to tan
         const moisture = hasRiver ? 80 : elevation > 70 ? 20 : 50;
         const normalized = moisture / 100;
         const r = Math.floor(139 + (222 - 139) * (1 - normalized));
@@ -144,10 +165,9 @@ export const WorldMapCanvas: React.FC = () => {
       }
 
       case 'rivers': {
-        // Show only water features
         if (hasRiver) return '#1e90ff';
         if (isWater) return '#0066cc';
-        return '#1a1a1a'; // Dark gray for land
+        return '#1a1a1a';
       }
 
       case 'biomes':
@@ -155,20 +175,83 @@ export const WorldMapCanvas: React.FC = () => {
         const color = BIOME_COLORS[biomeName] || '#666666';
         if (isWater) return color;
         
-        // Adjust brightness based on elevation
         const elevMod = (elevation - 50) / 100;
         return adjustBrightness(color, elevMod * 30);
       }
     }
   }, []);
 
-  // Fetch tile data from MCP
-  const fetchTileData = useCallback(async () => {
-    if (!activeWorldId) {
+  // Reset view to center the map
+  const resetView = useCallback(() => {
+    if (!containerRef.current || !tileData) return;
+    
+    const container = containerRef.current;
+    const canvasWidth = tileData.width * TILE_SIZE;
+    const canvasHeight = tileData.height * TILE_SIZE;
+    
+    setZoom(1);
+    setOffset({
+      x: (container.clientWidth - canvasWidth) / 2,
+      y: (container.clientHeight - canvasHeight) / 2,
+    });
+  }, [tileData]);
+
+  // Fit map to container
+  const fitToView = useCallback(() => {
+    if (!containerRef.current || !tileData) return;
+    
+    const container = containerRef.current;
+    const padding = 40;
+    
+    const scaleX = (container.clientWidth - padding * 2) / (tileData.width * TILE_SIZE);
+    const scaleY = (container.clientHeight - padding * 2) / (tileData.height * TILE_SIZE);
+    const newZoom = Math.max(MIN_ZOOM, Math.min(scaleX, scaleY, MAX_ZOOM));
+    
+    const canvasWidth = tileData.width * TILE_SIZE * newZoom;
+    const canvasHeight = tileData.height * TILE_SIZE * newZoom;
+    
+    setZoom(newZoom);
+    setOffset({
+      x: (container.clientWidth - canvasWidth) / 2,
+      y: (container.clientHeight - canvasHeight) / 2,
+    });
+  }, [tileData]);
+
+  // Zoom at mouse position
+  const zoomAtPoint = useCallback((newZoom: number, clientX: number, clientY: number) => {
+    if (!containerRef.current) return;
+    
+    const container = containerRef.current;
+    const rect = container.getBoundingClientRect();
+    
+    const mouseX = clientX - rect.left;
+    const mouseY = clientY - rect.top;
+    
+    const worldX = (mouseX - offset.x) / zoom;
+    const worldY = (mouseY - offset.y) / zoom;
+    
+    const clampedZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, newZoom));
+    
+    const newOffsetX = mouseX - worldX * clampedZoom;
+    const newOffsetY = mouseY - worldY * clampedZoom;
+    
+    setZoom(clampedZoom);
+    setOffset({ x: newOffsetX, y: newOffsetY });
+  }, [zoom, offset]);
+
+  // Fetch tile data from MCP - no dependencies on callbacks that change
+  const fetchTileData = useCallback(async (worldId: string) => {
+    if (!worldId) {
       setError('No world selected');
       setLoading(false);
       return;
     }
+
+    // Cancel any in-flight request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
 
     if (fetchInProgressRef.current) {
       console.log('[WorldMapCanvas] Fetch already in progress, skipping duplicate');
@@ -190,23 +273,33 @@ export const WorldMapCanvas: React.FC = () => {
         throw new Error('MCP client not available');
       }
 
-      console.log('[WorldMapCanvas] Fetching tiles for world:', activeWorldId);
-      const result = await mcpManager.gameStateClient.callTool('get_world_tiles', { worldId: activeWorldId });
+      console.log('[WorldMapCanvas] Fetching tiles for world:', worldId);
+      const result = await mcpManager.gameStateClient.callTool('get_world_tiles', { worldId });
+
+      // Check if aborted
+      if (abortControllerRef.current?.signal.aborted) {
+        console.log('[WorldMapCanvas] Fetch aborted');
+        return;
+      }
 
       const content = result.content?.[0];
       if (content?.type === 'text') {
         const data = JSON.parse(content.text);
         console.log('[WorldMapCanvas] Received tile data:', data.width, 'x', data.height);
         setTileData(data);
+        setError(null);
       } else {
         throw new Error('Invalid response format');
       }
     } catch (err) {
+      if (abortControllerRef.current?.signal.aborted) {
+        return;
+      }
       console.error('[WorldMapCanvas] Failed to fetch tiles:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to load map';
       
       if (errorMsg.includes('timed out')) {
-        setError('World generation timed out. Large worlds with complex terrain (lakes, rivers) may take longer to generate. Try again or select a smaller world.');
+        setError('World generation timed out. Large worlds may take longer. Try again or select a smaller world.');
       } else {
         setError(errorMsg);
       }
@@ -218,19 +311,37 @@ export const WorldMapCanvas: React.FC = () => {
         loadingTimerRef.current = null;
       }
     }
-  }, [activeWorldId]);
+  }, []); // No dependencies - uses passed worldId
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (loadingTimerRef.current) {
         clearInterval(loadingTimerRef.current);
       }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
     };
   }, []);
 
+  // Fetch when activeWorldId changes
   useEffect(() => {
-    fetchTileData();
-  }, [fetchTileData]);
+    if (activeWorldId) {
+      fetchTileData(activeWorldId);
+    }
+  }, [activeWorldId, fetchTileData]);
+
+  // Fit to view when tile data is loaded
+  useEffect(() => {
+    if (tileData && containerRef.current) {
+      // Small delay to ensure container is sized
+      const timer = setTimeout(() => {
+        fitToView();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [tileData]); // Intentionally not including fitToView to avoid loop
 
   // Draw the map on canvas
   useEffect(() => {
@@ -249,7 +360,7 @@ export const WorldMapCanvas: React.FC = () => {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw tiles based on visualization mode
+    // Draw tiles
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const tileIdx = x * 5;
@@ -268,37 +379,32 @@ export const WorldMapCanvas: React.FC = () => {
       }
     }
 
-    // Draw structures with enhanced visibility
+    // Draw structures
     structures.forEach((struct) => {
       const icon = STRUCTURE_ICONS[struct.type] || '📍';
       const x = struct.x * tileSize + tileSize / 2;
       const y = struct.y * tileSize + tileSize / 2;
       
-      // Draw background circle for contrast
       ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
       ctx.beginPath();
       ctx.arc(x, y, tileSize * 0.8, 0, Math.PI * 2);
       ctx.fill();
 
-      // Add glow effect if hovered
       if (hoveredPOI && hoveredPOI.x === struct.x && hoveredPOI.y === struct.y) {
         ctx.shadowColor = '#00ff41';
         ctx.shadowBlur = 15;
       }
 
-      // Draw icon larger
       ctx.font = `${Math.max(14, tileSize * 1.2)}px Arial`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(icon, x, y);
-
-      // Reset shadow
       ctx.shadowBlur = 0;
     });
 
-    // Draw grid lines if zoomed in
-    if (zoom >= 1.5) {
-      ctx.strokeStyle = 'rgba(0, 255, 65, 0.2)';
+    // Draw grid when zoomed in
+    if (zoom >= 2) {
+      ctx.strokeStyle = 'rgba(0, 255, 65, 0.15)';
       ctx.lineWidth = 0.5;
       for (let x = 0; x <= width; x++) {
         ctx.beginPath();
@@ -315,46 +421,39 @@ export const WorldMapCanvas: React.FC = () => {
     }
   }, [tileData, zoom, visualizationMode, hoveredPOI, getTileColor]);
 
-  // Handle mouse move for tooltips and hover detection
+  // Handle mouse move - tooltip position relative to CONTAINER, not canvas
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!tileData || !canvasRef.current) return;
+    if (!tileData || !canvasRef.current || !containerRef.current) return;
 
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
     const tileSize = TILE_SIZE * zoom;
 
-    const x = Math.floor((e.clientX - rect.left) / tileSize);
-    const y = Math.floor((e.clientY - rect.top) / tileSize);
+    // Mouse position relative to container
+    const mouseX = e.clientX - containerRect.left;
+    const mouseY = e.clientY - containerRect.top;
 
-    if (x < 0 || x >= tileData.width || y < 0 || y >= tileData.height) {
+    // Calculate tile coordinates accounting for offset
+    const tileX = Math.floor((mouseX - offset.x) / tileSize);
+    const tileY = Math.floor((mouseY - offset.y) / tileSize);
+
+    setLastMousePos({ x: e.clientX, y: e.clientY });
+
+    if (tileX < 0 || tileX >= tileData.width || tileY < 0 || tileY >= tileData.height) {
       setTooltip(null);
       setHoveredPOI(null);
       return;
     }
 
-    // Check if hovering over a structure
-    const structure = tileData.structures.find(s => s.x === x && s.y === y);
-    if (structure) {
-      setHoveredPOI({ x, y });
-      // Change cursor to pointer
-      if (canvas.style.cursor !== 'pointer') {
-        canvas.style.cursor = 'pointer';
-      }
-    } else {
-      setHoveredPOI(null);
-      if (canvas.style.cursor !== 'grab' && !isDragging) {
-        canvas.style.cursor = 'grab';
-      } else if (isDragging && canvas.style.cursor !== 'grabbing') {
-        canvas.style.cursor = 'grabbing';
-      }
-    }
+    const structure = tileData.structures.find(s => s.x === tileX && s.y === tileY);
+    setHoveredPOI(structure ? { x: tileX, y: tileY } : null);
 
     if (isDragging) return;
 
-    const row = tileData.tiles[y];
+    const row = tileData.tiles[tileY];
     if (!row) return;
 
-    const tileIdx = x * 5;
+    const tileIdx = tileX * 5;
     const biomeIdx = row[tileIdx];
     const elevation = row[tileIdx + 1];
     const regionId = row[tileIdx + 2];
@@ -363,8 +462,8 @@ export const WorldMapCanvas: React.FC = () => {
     const region = tileData.regions.find(r => r.id === regionId);
 
     setTooltip({
-      x,
-      y,
+      x: tileX,
+      y: tileY,
       biome: tileData.biomes[biomeIdx] || 'unknown',
       elevation,
       region: region?.name || null,
@@ -372,43 +471,46 @@ export const WorldMapCanvas: React.FC = () => {
       hasRiver,
     });
 
-    setTooltipPos({
-      x: e.clientX - rect.left + 15,
-      y: e.clientY - rect.top + 15,
-    });
-  }, [tileData, zoom, isDragging]);
+    // Position tooltip relative to container (with bounds checking)
+    const tooltipX = Math.min(mouseX + 15, containerRect.width - 180);
+    const tooltipY = Math.min(mouseY + 15, containerRect.height - 120);
+    
+    setTooltipPos({ x: tooltipX, y: tooltipY });
+  }, [tileData, zoom, offset, isDragging]);
 
   // Handle POI click
   const handleCanvasClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!tileData || !canvasRef.current || isDragging) return;
+    if (!tileData || !containerRef.current || isDragging) return;
 
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
     const tileSize = TILE_SIZE * zoom;
 
-    const x = Math.floor((e.clientX - rect.left) / tileSize);
-    const y = Math.floor((e.clientY - rect.top) / tileSize);
+    const mouseX = e.clientX - containerRect.left;
+    const mouseY = e.clientY - containerRect.top;
 
-    const structure = tileData.structures.find(s => s.x === x && s.y === y);
+    const tileX = Math.floor((mouseX - offset.x) / tileSize);
+    const tileY = Math.floor((mouseY - offset.y) / tileSize);
+
+    const structure = tileData.structures.find(s => s.x === tileX && s.y === tileY);
     if (structure) {
       setSelectedPOI(structure);
     }
-  }, [tileData, zoom, isDragging]);
+  }, [tileData, zoom, offset, isDragging]);
 
-  // Handle zoom
+  // Handle wheel zoom
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setZoom(prev => Math.min(4, Math.max(0.5, prev + delta)));
-  }, []);
+    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+    zoomAtPoint(zoom + delta, e.clientX, e.clientY);
+  }, [zoom, zoomAtPoint]);
 
   // Handle pan
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 0 && !hoveredPOI) {
+    if (e.button === 0) {
       setIsDragging(true);
       setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
     }
-  }, [offset, hoveredPOI]);
+  }, [offset]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -423,16 +525,89 @@ export const WorldMapCanvas: React.FC = () => {
     }
   }, [isDragging, dragStart]);
 
-  // ESC key to close POI panel
+  // Handle world selection change
+  const handleWorldChange = useCallback((worldId: string) => {
+    if (worldId !== activeWorldId) {
+      // Cancel current fetch first
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      fetchInProgressRef.current = false;
+      
+      setTileData(null);
+      setOffset({ x: 0, y: 0 });
+      setZoom(1);
+      setActiveWorldId(worldId, true);
+    }
+  }, [activeWorldId, setActiveWorldId]);
+
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && selectedPOI) {
         setSelectedPOI(null);
+        return;
+      }
+      
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.key) {
+        case '+':
+        case '=':
+          zoomAtPoint(zoom + ZOOM_STEP, lastMousePos.x, lastMousePos.y);
+          break;
+        case '-':
+        case '_':
+          zoomAtPoint(zoom - ZOOM_STEP, lastMousePos.x, lastMousePos.y);
+          break;
+        case '0':
+          resetView();
+          break;
+        case 'f':
+        case 'F':
+          fitToView();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          setOffset(prev => ({ ...prev, y: prev.y + 50 }));
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          setOffset(prev => ({ ...prev, y: prev.y - 50 }));
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          setOffset(prev => ({ ...prev, x: prev.x + 50 }));
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          setOffset(prev => ({ ...prev, x: prev.x - 50 }));
+          break;
       }
     };
+    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPOI]);
+  }, [selectedPOI, zoom, lastMousePos, zoomAtPoint, resetView, fitToView]);
+
+  // Calculate minimap viewport indicator
+  const getMinimapViewport = useCallback(() => {
+    if (!tileData || containerSize.width === 0) {
+      return { left: 0, top: 0, width: 100, height: 100 };
+    }
+    
+    const mapWidth = tileData.width * TILE_SIZE * zoom;
+    const mapHeight = tileData.height * TILE_SIZE * zoom;
+    
+    return {
+      left: Math.max(0, Math.min(100, (-offset.x / mapWidth) * 100)),
+      top: Math.max(0, Math.min(100, (-offset.y / mapHeight) * 100)),
+      width: Math.min(100, (containerSize.width / mapWidth) * 100),
+      height: Math.min(100, (containerSize.height / mapHeight) * 100),
+    };
+  }, [tileData, zoom, offset, containerSize]);
 
   if (loading) {
     return (
@@ -451,10 +626,10 @@ export const WorldMapCanvas: React.FC = () => {
           <div className="text-xs text-terminal-green/50 space-y-1">
             <p>Generating terrain, rivers, and lakes...</p>
             {loadingTime > 10 && (
-              <p className="text-yellow-500/70">Large worlds with complex hydrology may take 30-60 seconds</p>
+              <p className="text-yellow-500/70">Large worlds may take 30-60 seconds</p>
             )}
             {loadingTime > 30 && (
-              <p className="text-orange-500/70">Still working... The lake/river algorithms are computationally intensive</p>
+              <p className="text-orange-500/70">Still working... Complex terrain takes time</p>
             )}
           </div>
           <div className="mt-4 w-64 mx-auto h-2 bg-terminal-green/20 rounded overflow-hidden">
@@ -479,7 +654,7 @@ export const WorldMapCanvas: React.FC = () => {
           <div className="text-xl mb-4 text-red-500">Map Loading Failed</div>
           <div className="text-sm text-terminal-green/70 mb-4 whitespace-pre-wrap">{error}</div>
           <button
-            onClick={fetchTileData}
+            onClick={() => activeWorldId && fetchTileData(activeWorldId)}
             className="px-4 py-2 bg-terminal-green text-terminal-black font-bold uppercase hover:bg-terminal-green-bright transition-colors"
           >
             🔄 Try Again
@@ -499,15 +674,36 @@ export const WorldMapCanvas: React.FC = () => {
     );
   }
 
+  const minimapViewport = getMinimapViewport();
+
   return (
     <div className="h-full w-full flex flex-col font-mono text-terminal-green overflow-hidden">
       {/* Header */}
-      <div className="flex justify-between items-center p-3 border-b border-terminal-green-dim flex-shrink-0">
-        <h2 className="text-xl font-bold uppercase tracking-wider text-glow">
-          🗺️ World Map
-        </h2>
-        <div className="flex items-center gap-4">
-          {/* Visualization Mode Selector */}
+      <div className="flex flex-wrap justify-between items-center gap-2 p-3 border-b border-terminal-green-dim flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-bold uppercase tracking-wider text-glow">
+            🗺️ World Map
+          </h2>
+          
+          {/* World Selector */}
+          {worlds.length > 0 && (
+            <select
+              value={activeWorldId || ''}
+              onChange={(e) => handleWorldChange(e.target.value)}
+              className="px-2 py-1 bg-terminal-black border border-terminal-green text-terminal-green text-sm max-w-[200px]"
+              title="Select World"
+            >
+              {worlds.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name || w.id.slice(0, 8)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Visualization Mode */}
           <select
             value={visualizationMode}
             onChange={(e) => setVisualizationMode(e.target.value as VisualizationMode)}
@@ -520,30 +716,56 @@ export const WorldMapCanvas: React.FC = () => {
             <option value="rivers">Rivers</option>
           </select>
 
-          <span className="text-sm text-terminal-green/70">
-            {tileData.width}×{tileData.height} tiles | {tileData.structures.length} structures | {tileData.regions.length} regions
+          {/* Map Info */}
+          <span className="text-xs text-terminal-green/70 hidden sm:inline">
+            {tileData.width}×{tileData.height} | {tileData.structures.length} POIs
           </span>
-          <div className="flex items-center gap-2">
+
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 bg-terminal-black/50 border border-terminal-green-dim rounded">
             <button
-              onClick={() => setZoom(prev => Math.max(0.5, prev - 0.25))}
-              className="px-2 py-1 bg-terminal-green/10 border border-terminal-green hover:bg-terminal-green/20"
+              onClick={() => zoomAtPoint(zoom - ZOOM_STEP * 2, window.innerWidth / 2, window.innerHeight / 2)}
+              className="px-2 py-1 hover:bg-terminal-green/20 transition-colors"
+              title="Zoom Out (-)"
             >
-              -
+              −
             </button>
-            <span className="text-sm w-16 text-center">{Math.round(zoom * 100)}%</span>
+            <span className="text-xs w-14 text-center border-x border-terminal-green-dim">
+              {Math.round(zoom * 100)}%
+            </span>
             <button
-              onClick={() => setZoom(prev => Math.min(4, prev + 0.25))}
-              className="px-2 py-1 bg-terminal-green/10 border border-terminal-green hover:bg-terminal-green/20"
+              onClick={() => zoomAtPoint(zoom + ZOOM_STEP * 2, window.innerWidth / 2, window.innerHeight / 2)}
+              className="px-2 py-1 hover:bg-terminal-green/20 transition-colors"
+              title="Zoom In (+)"
             >
               +
             </button>
           </div>
-          <button
-            onClick={fetchTileData}
-            className="px-3 py-1 text-xs bg-terminal-green/10 border border-terminal-green hover:bg-terminal-green/20 transition-colors uppercase tracking-wider"
-          >
-            🔄 Refresh
-          </button>
+
+          {/* View Controls */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={fitToView}
+              className="px-2 py-1 text-xs bg-terminal-green/10 border border-terminal-green-dim hover:bg-terminal-green/20 transition-colors"
+              title="Fit to View (F)"
+            >
+              ⊡
+            </button>
+            <button
+              onClick={resetView}
+              className="px-2 py-1 text-xs bg-terminal-green/10 border border-terminal-green-dim hover:bg-terminal-green/20 transition-colors"
+              title="Reset View (0)"
+            >
+              ⌖
+            </button>
+            <button
+              onClick={() => activeWorldId && fetchTileData(activeWorldId)}
+              className="px-2 py-1 text-xs bg-terminal-green/10 border border-terminal-green-dim hover:bg-terminal-green/20 transition-colors"
+              title="Refresh Map"
+            >
+              🔄
+            </button>
+          </div>
         </div>
       </div>
 
@@ -553,7 +775,11 @@ export const WorldMapCanvas: React.FC = () => {
         className="flex-1 overflow-hidden relative bg-terminal-black"
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={() => {
+          handleMouseUp();
+          setTooltip(null);
+          setHoveredPOI(null);
+        }}
         onMouseMove={handleDrag}
       >
         <canvas
@@ -587,6 +813,30 @@ export const WorldMapCanvas: React.FC = () => {
           }}
           position="top-right"
         />
+
+        {/* Minimap */}
+        <div className="absolute bottom-3 left-3 w-32 h-24 bg-terminal-black/80 border border-terminal-green-dim overflow-hidden">
+          <div
+            className="absolute bg-terminal-green/30 border border-terminal-green pointer-events-none"
+            style={{
+              left: `${minimapViewport.left}%`,
+              top: `${minimapViewport.top}%`,
+              width: `${minimapViewport.width}%`,
+              height: `${minimapViewport.height}%`,
+            }}
+          />
+          <div 
+            className="w-full h-full opacity-50"
+            style={{
+              background: `linear-gradient(135deg, ${BIOME_COLORS.forest}, ${BIOME_COLORS.ocean})`,
+            }}
+          />
+        </div>
+
+        {/* Controls Help */}
+        <div className="absolute bottom-3 right-3 text-xs text-terminal-green/50 bg-terminal-black/70 px-2 py-1 border border-terminal-green-dim/50">
+          Drag to pan • Scroll to zoom • F to fit • 0 to reset
+        </div>
 
         {/* Tooltip */}
         {tooltip && !selectedPOI && (
@@ -625,13 +875,12 @@ export const WorldMapCanvas: React.FC = () => {
             onClose={() => setSelectedPOI(null)}
             onEnter={() => {
               console.log('Enter location:', selectedPOI.name);
-              // TODO: Implement location entry
             }}
           />
         )}
       </div>
 
-      {/* Legend - changes based on visualization mode */}
+      {/* Legend */}
       <div className="p-2 border-t border-terminal-green-dim flex-shrink-0">
         <div className="flex flex-wrap gap-3 text-xs">
           {visualizationMode === 'biomes' && (
@@ -652,7 +901,7 @@ export const WorldMapCanvas: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="text-terminal-green/70">Elevation:</span>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-black rounded-sm" />
+                <div className="w-3 h-3 bg-black rounded-sm border border-terminal-green-dim" />
                 <span className="text-terminal-green/70">Low</span>
               </div>
               <div className="flex items-center gap-1">
@@ -717,7 +966,6 @@ export const WorldMapCanvas: React.FC = () => {
   );
 };
 
-// Helper to adjust color brightness
 function adjustBrightness(hex: string, percent: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = Math.min(255, Math.max(0, (num >> 16) + percent));
