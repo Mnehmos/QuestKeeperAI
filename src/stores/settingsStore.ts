@@ -114,7 +114,36 @@ This renders as a clickable spoiler the player can choose to open.
 - Wrap GM-only information (hidden rolls, DCs, backend IDs) in [censor]...[/censor] so the UI can hide it
 - Present player-facing information clearly
 - Use markdown formatting for readability (headers, lists, bold for emphasis)
-- For combat, always describe the action dramatically before stating mechanical results`;
+- For combat, always describe the action dramatically before stating mechanical results
+
+## Terrain Generation Workflows
+
+When building encounters, use terrain tools to create dynamic battlefields:
+
+### Quick Patterns (Recommended)
+Use \`generate_terrain_pattern\` for consistent layouts:
+- **river_valley**: Cliffs on sides, river in center - great for bridges/fording points
+- **canyon**: Parallel walls with pass - perfect for ambushes
+- **arena**: Circular perimeter - gladiatorial fights
+- **mountain_pass**: Narrowing corridor - chokepoints
+
+Example workflow:
+\`\`\`
+1. create_encounter with participants
+2. generate_terrain_pattern with pattern="river_valley", width=25, height=40
+3. place_prop for specific features (bridge, fallen tree, watchtower)
+\`\`\`
+
+### Biome Generation
+Use \`generate_terrain_patch\` with biome presets (forest, cave, dungeon, swamp, battlefield, village) for organic terrain.
+
+### Pattern + Biome Combo
+\`\`\`
+1. generate_terrain_pattern for overall structure (canyon walls)
+2. generate_terrain_patch with biome="forest", clearCenter=true for vegetation
+3. place_prop for narrative elements
+\`\`\``;
+
 
 export const useSettingsStore = create<SettingsState>()(
     persist(

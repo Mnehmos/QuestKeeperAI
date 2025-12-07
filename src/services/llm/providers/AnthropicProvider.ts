@@ -14,7 +14,8 @@ export class AnthropicProvider implements LLMProviderInterface {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'anthropic-beta': 'advanced-tool-use-2025-11-20' // Enable tool search with defer_loading
         };
 
         // Extract system message
@@ -67,7 +68,9 @@ export class AnthropicProvider implements LLMProviderInterface {
             body.tools = tools.map((tool) => ({
                 name: tool.name,
                 description: tool.description,
-                input_schema: tool.inputSchema
+                input_schema: tool.inputSchema,
+                // MCP spec: defer_loading for on-demand tool loading
+                ...(tool.deferLoading !== undefined && { defer_loading: tool.deferLoading })
             }));
         }
 
@@ -120,7 +123,8 @@ export class AnthropicProvider implements LLMProviderInterface {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
             'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
+            'anthropic-dangerous-direct-browser-access': 'true',
+            'anthropic-beta': 'advanced-tool-use-2025-11-20' // Enable tool search with defer_loading
         };
 
         // Extract system message
@@ -173,7 +177,9 @@ export class AnthropicProvider implements LLMProviderInterface {
             body.tools = tools.map((tool) => ({
                 name: tool.name,
                 description: tool.description,
-                input_schema: tool.inputSchema
+                input_schema: tool.inputSchema,
+                // MCP spec: defer_loading for on-demand tool loading
+                ...(tool.deferLoading !== undefined && { defer_loading: tool.deferLoading })
             }));
         }
 

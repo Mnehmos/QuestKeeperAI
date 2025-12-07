@@ -6,6 +6,8 @@ import { Entity, useCombatStore } from '../../stores/combatStore';
 import { calculateGridPosition, CREATURE_SIZE_MAP, getElevationAt } from '../../utils/gridHelpers';
 import { EntityTooltip } from './EntityTooltip';
 import { ProceduralCreature, CreatureArchetype } from './models';
+import { getCreatureComponent } from './models/CreatureLibrary';
+import { getModelDefinition, inferModelTagFromName } from './models/modelRegistry';
 
 interface TokenProps {
   entity: Entity;
@@ -151,13 +153,36 @@ export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
       onPointerMove={handlePointerMove}
     >
       {useProceduralModel ? (
-        <ProceduralCreature
-          archetype={archetype}
-          size={entity.size}
-          color={entity.color}
-          isSelected={isSelected}
-          isEnemy={entity.type === 'monster'}
-        />
+        (() => {
+          // Priority 1: explicit modelTag
+          // Priority 2: infer from name using registry
+          // Priority 3: fallback to archetype-based ProceduralCreature
+          const modelTag = entity.modelTag || inferModelTagFromName(entity.name);
+          const SpecificComponent = modelTag ? getCreatureComponent(modelTag) : null;
+          const modelDef = modelTag ? getModelDefinition(modelTag) : null;
+          
+          if (SpecificComponent) {
+            return (
+              <SpecificComponent
+                size={entity.size}
+                color={entity.color || modelDef?.defaultColor}
+                isSelected={isSelected}
+                isEnemy={entity.type === 'monster'}
+              />
+            );
+          }
+          
+          // Fallback to archetype-based rendering
+          return (
+            <ProceduralCreature
+              archetype={archetype}
+              size={entity.size}
+              color={entity.color}
+              isSelected={isSelected}
+              isEnemy={entity.type === 'monster'}
+            />
+          );
+        })()
       ) : (
         // Fallback: Original cylinder geometry
         <mesh castShadow receiveShadow>
