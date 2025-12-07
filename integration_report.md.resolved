@@ -1,0 +1,299 @@
+# Backend-Frontend Integration Report
+**Quest Keeper AI**  
+*Generated: December 6, 2025*
+
+---
+
+## Executive Summary
+
+Quest Keeper AI uses a **unified MCP (Model Context Protocol) server architecture** where the React/Tauri frontend communicates with a TypeScript backend (`rpg-mcp`) via JSON-RPC 2.0 over stdio. The integration is mature with **135+ backend tools** and comprehensive frontend state management across combat, game state, and party systems.
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Frontend["Quest Keeper AI Frontend (React + Tauri)"]
+        UI[UI Components]
+        subgraph Stores["Zustand Stores"]
+            CS[combatStore.ts<br/>796 lines]
+            GS[gameStateStore.ts<br/>732 lines]
+            PS[partyStore.ts<br/>837 lines]
+        end
+        subgraph Services
+            MC[mcpClient.ts<br/>McpManager Singleton]
+            LLM[LLMService.ts<br/>3 Providers]
+            TR[toolRegistry.ts<br/>Local Tools]
+        end
+    end
+    
+    subgraph Backend["rpg-mcp Server (TypeScript + SQLite)"]
+        REG[tool-registry.ts<br/>135+ Tools]
+        subgraph Categories["Tool Categories"]
+            WORLD[World/Spatial]
+            COMBAT[Combat/Terrain]
+            CHAR[Character/Party]
+            INV[Inventory/Items]
+            QUEST[Quest/Secrets]
+            NPC[NPC Memory]
+            LOOT[Corpse/Loot]
+            MATH[Math/Strategy]
+        end
+        DB[(rpg.db<br/>SQLite)]
+    end
+    
+    UI --> Stores
+    Stores --> MC
+    LLM --> MC
+    MC -->|JSON-RPC 2.0<br/>stdio| REG
+    REG --> Categories
+    Categories --> DB
+```
+
+---
+
+## Backend Tool Coverage
+
+### Tool Categories (20 Total)
+
+| Category | Tool Count | Key Tools |
+|----------|------------|-----------|
+| **World** | 9 | `generate_world`, `get_world_state`, `apply_map_patch`, `get_region_map` |
+| **Combat** | 16 | `create_encounter`, `execute_combat_action`, `render_map`, `calculate_aoe` |
+| **Character** | 5 | `create_character`, `get_character`, `update_character`, `list_characters` |
+| **Party** | 16 | `create_party`, `add_party_member`, `set_active_character`, `move_party` |
+| **Inventory** | 15 | `give_item`, `equip_item`, `transfer_item`, `use_item` |
+| **Quest** | 8 | `create_quest`, `assign_quest`, `update_objective`, `complete_quest` |
+| **Math** | 5 | `dice_roll`, `probability_calculate`, `algebra_solve` |
+| **Strategy** | 6 | `create_nation`, `resolve_turn`, `claim_region` |
+| **Turn Management** | 5 | `init_turn_state`, `submit_turn_actions`, `poll_turn_results` |
+| **Secrets** | 9 | `create_secret`, `reveal_secret`, `check_for_leaks` |
+| **Rest** | 2 | `take_long_rest`, `take_short_rest` |
+| **Concentration** | 5 | `check_concentration_save`, `break_concentration` |
+| **Scrolls** | 6 | `use_spell_scroll`, `create_spell_scroll`, `identify_scroll` |
+| **Auras** | 7 | `create_aura`, `process_aura_effects`, `expire_auras` |
+| **NPC Memory** | 7 | `get_npc_relationship`, `record_conversation_memory`, `interact_socially` |
+| **Theft** | 10 | `steal_item`, `sell_to_fence`, `report_theft`, `advance_heat_decay` |
+| **Corpse/Loot** | 14 | `loot_corpse`, `harvest_corpse`, `generate_loot`, `create_loot_table` |
+| **Improvisation** | 8 | `resolve_improvised_stunt`, `apply_custom_effect`, `attempt_arcane_synthesis` |
+| **Spatial** | 4 | `look_at_surroundings`, `generate_room_node`, `move_character_to_room` |
+
+**Total: ~135+ tools**
+
+---
+
+## Frontend Integration Points
+
+### 1. MCP Client ([mcpClient.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts))
+
+```typescript
+// Singleton pattern for unified server connection
+McpManager {
+  unifiedClient: McpClient     // Main connection
+  gameStateClient: McpClient   // Alias (same instance)
+  combatClient: McpClient      // Alias (same instance)
+}
+```
+
+**Key Methods:**
+- [connect()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts#69-116) - Spawns sidecar binary via Tauri
+- [callTool(name, args)](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts#265-271) - Single tool invocation
+- [callToolsBatch(calls)](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts#272-282) - Parallel execution
+- [listTools()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts#261-264) - Discovery (cached)
+
+**Timeout Configuration:**
+| Operation Type | Timeout |
+|---------------|---------|
+| Default | 30s |
+| Initialize | 10s |
+| Long-running (`generate_world`, `resolve_turn`) | 120s |
+
+### 2. State Stores
+
+#### combatStore.ts (796 lines)
+**Consumes Tools:**
+- `create_encounter`, `get_encounter_state`, `end_encounter`
+- `render_map`, `generate_terrain_patch`, `calculate_aoe`
+- Combat visualization data parsing
+
+**Key Functions:**
+- `syncCombatState()` - Fetches encounter state from MCP
+- `updateFromStateJson()` - Parses embedded JSON from tool responses
+- [stateJsonToEntities()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/combatStore.ts#200-366) - Converts MCP data to 3D entities
+- [stateJsonToTerrain()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/combatStore.ts#367-515) - Converts terrain features for battlemap
+
+#### gameStateStore.ts (732 lines)
+**Consumes Tools:**
+- `get_character`, `list_characters`
+- `get_inventory`, `get_inventory_detailed`
+- `list_quests`, `get_quest_log`
+- `get_world_state`
+
+**Key Functions:**
+- `syncState()` - Batch sync of character, inventory, quests
+- [parseCharacterFromJson()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/gameStateStore.ts#159-236) - D&D character normalization
+- [parseInventoryFromJson()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/gameStateStore.ts#265-298) - Item data extraction
+- [parseQuestsFromResponse()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/gameStateStore.ts#299-381) - Quest/objective handling
+
+#### partyStore.ts (837 lines)
+**Consumes Tools:**
+- `create_party`, `get_party`, `list_parties`
+- `add_party_member`, `remove_party_member`
+- `set_active_character`, `move_party`
+
+**Key Functions:**
+- [initialize()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts#241-260) - Full party state sync
+- [syncActiveCharacterToGameState()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/partyStore.ts#234-253) - Cross-store sync
+- [addMember()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/partyStore.ts#420-448), [removeMember()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/partyStore.ts#449-476) - Membership operations
+
+### 3. Local Tools ([toolRegistry.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/toolRegistry.ts))
+
+Frontend-only tools for direct UI manipulation:
+
+| Tool | Description |
+|------|-------------|
+| `spawn_entity` | Add entity to battlemap |
+| `move_entity` | Update entity position |
+| `update_stats` | Modify HP/AC/conditions |
+| `delete_entity` | Remove from battlemap |
+| `watchdog_report_bug` | AI bug reporting |
+
+### 4. LLM Integration ([LLMService.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/llm/LLMService.ts))
+
+**Providers:**
+- [OpenAIProvider.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/llm/providers/OpenAIProvider.ts) (12KB) - OpenAI/OpenRouter
+- [AnthropicProvider.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/llm/providers/AnthropicProvider.ts) (12KB) - Claude models
+- [GeminiProvider.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/llm/providers/GeminiProvider.ts) (15KB) - Google Gemini
+
+**Tool Execution Flow:**
+1. LLM receives tool definitions from [listTools()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts#261-264)
+2. LLM generates tool calls during streaming
+3. [executeToolCallsBatch()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/llm/LLMService.ts#108-140) runs tools in parallel
+4. Results fed back to LLM for continuation
+5. [handleBatchToolSync()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/llm/LLMService.ts#141-171) updates relevant stores
+
+---
+
+## Data Flow Patterns
+
+### 1. MCP Response Parsing ([mcpUtils.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/utils/mcpUtils.ts))
+
+```typescript
+// Handles two response formats:
+// 1. MCP wrapper: { content: [{ type: 'text', text: '...' }] }
+// 2. Direct JSON: { characters: [...], count: 1 }
+parseMcpResponse<T>(result: any, fallback: T): T
+```
+
+### 2. Combat State Synchronization
+
+```mermaid
+sequenceDiagram
+    participant UI as BattlemapView
+    participant CS as combatStore
+    participant MCP as rpg-mcp
+    
+    UI->>CS: syncCombatState()
+    CS->>MCP: get_encounter_state
+    MCP-->>CS: EncounterStateJson
+    CS->>CS: stateJsonToEntities()
+    CS->>CS: stateJsonToTerrain()
+    CS-->>UI: entities[], terrain[]
+```
+
+### 3. Game State Batch Sync
+
+```typescript
+// Efficient parallel sync
+await executeBatchToolCalls(mcpClient, [
+  { name: 'get_character', args: { id } },
+  { name: 'get_inventory_detailed', args: { characterId } },
+  { name: 'get_quest_log', args: { characterId } }
+]);
+```
+
+---
+
+## Integration Health Assessment
+
+### ✅ Strengths
+
+1. **Unified MCP Server** - Single binary reduces complexity
+2. **Singleton Pattern** - Prevents duplicate connections (per Rule 27)
+3. **Tool Caching** - 60s TTL reduces [listTools()](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts#261-264) calls
+4. **Batch Execution** - Parallel tool calls for efficiency
+5. **Robust Parsing** - Handles multiple response formats
+6. **Debounce/Throttle** - Prevents sync storms
+
+### ⚠️ Areas for Improvement
+
+1. **Tool Discovery Gap** - Frontend lists 4 local tools, but 135+ MCP tools exist
+   - *Recommendation:* Document commonly-used tools per feature
+   
+2. **Error Handling Variance** - Some stores log errors, others swallow them
+   - *Recommendation:* Standardize error bubbling to UI
+   
+3. **Stale Cache Risk** - Tool cache TTL (60s) may miss updates
+   - *Recommendation:* Add cache invalidation on connection reset
+   
+4. **No Schema Validation** - Frontend doesn't validate tool args
+   - *Recommendation:* Consider JSON Schema validation
+
+### 🔴 Known Issues
+
+1. **React Strict Mode** - Double `useEffect` runs require idempotent init (Rule 9)
+2. **Tool Deduplication** - Both clients alias same instance; must dedupe for LLM (Rule 12)
+3. **Free Model Limitations** - OpenRouter `:free` models don't support tools (Rule 24)
+
+---
+
+## Tool-to-UI Component Mapping
+
+| UI Component | Store | MCP Tools Used |
+|--------------|-------|----------------|
+| BattlemapView | combatStore | `get_encounter_state`, `render_map`, `generate_terrain_*` |
+| CharacterSheet | gameStateStore | `get_character`, `update_character` |
+| InventoryView | gameStateStore | `get_inventory_detailed`, `equip_item`, `use_item` |
+| QuestLog | gameStateStore | `get_quest_log`, `update_objective` |
+| PartyPanel | partyStore | `get_party`, `get_party_members`, `set_active_character` |
+| WorldMap | gameStateStore | `get_world_state`, `get_region_map` |
+| ChatPanel | LLMService | All tools via streaming |
+
+---
+
+## Recommendations
+
+### Short-term
+1. Add TypeScript interfaces for all 135+ tool schemas
+2. Implement consistent error toast notifications
+3. Add loading states for all async tool operations
+
+### Medium-term
+1. Create tool documentation generator from [tool-registry.ts](file:///c:/Users/mnehm/AppData/Roaming/Roo-Code/MCP/rpg-mcp/src/server/tool-registry.ts)
+2. Add integration tests for critical tool chains
+3. Implement optimistic updates for high-frequency operations
+
+### Long-term
+1. Consider GraphQL-like batching for related tool calls
+2. Add WebSocket support for server-pushed updates
+3. Implement tool usage analytics for performance tuning
+
+---
+
+## Files Analyzed
+
+| File | Location | Lines | Purpose |
+|------|----------|-------|---------|
+| [tool-registry.ts](file:///c:/Users/mnehm/AppData/Roaming/Roo-Code/MCP/rpg-mcp/src/server/tool-registry.ts) | Backend | 1257 | All 135+ tool definitions |
+| [mcpClient.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/mcpClient.ts) | Frontend | 368 | MCP connection management |
+| [combatStore.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/combatStore.ts) | Frontend | 796 | Combat state management |
+| [gameStateStore.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/gameStateStore.ts) | Frontend | 732 | Character/inventory/quest state |
+| [partyStore.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/stores/partyStore.ts) | Frontend | 837 | Party management |
+| [LLMService.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/llm/LLMService.ts) | Frontend | 454 | LLM provider orchestration |
+| [toolRegistry.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/services/toolRegistry.ts) | Frontend | 207 | Local UI tools |
+| [mcpUtils.ts](file:///c:/Users/mnehm/Desktop/Quest%20Keeper%20AI%20attempt%202/src/utils/mcpUtils.ts) | Frontend | 232 | Response parsing utilities |
+
+---
+
+*Report generated by automated codebase analysis*
