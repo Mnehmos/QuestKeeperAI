@@ -14,15 +14,38 @@ interface TokenProps {
 export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
   const meshRef = useRef<Mesh>(null);
   const selectEntity = useCombatStore((state) => state.selectEntity);
+  const measureMode = useCombatStore((state) => state.measureMode);
+  const measureStart = useCombatStore((state) => state.measureStart);
+  const measureEnd = useCombatStore((state) => state.measureEnd);
+  const setMeasureStart = useCombatStore((state) => state.setMeasureStart);
+  const setMeasureEnd = useCombatStore((state) => state.setMeasureEnd);
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
+    
+    if (measureMode) {
+      // Use entity's grid position for measurement
+      const vizX = Math.floor(entity.position.x);
+      const vizZ = Math.floor(entity.position.z);
+      
+      if (!measureStart) {
+        setMeasureStart({ x: vizX, y: vizZ });
+      } else if (!measureEnd) {
+        setMeasureEnd({ x: vizX, y: vizZ });
+      } else {
+        // Reset and start new measurement
+        setMeasureStart({ x: vizX, y: vizZ });
+        setMeasureEnd(null);
+      }
+      return;
+    }
+
     // Toggle: if already selected, deselect; otherwise select
     selectEntity(isSelected ? null : entity.id);
   };
 
   // Calculate position based on grid snapping rules
-  const position = calculateGridPosition(entity.position.x, entity.position.z, entity.size);
+  const position = calculateGridPosition(entity.position.x, entity.position.z, entity.size, entity.position.y);
   
   // Calculate dimensions based on size category
   const units = CREATURE_SIZE_MAP[entity.size];

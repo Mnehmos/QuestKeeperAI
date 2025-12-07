@@ -222,23 +222,33 @@ function stateJsonToEntities(data: EncounterStateJson, gridConfig: GridConfig, t
       mcpY = Math.round(Math.sin(angle) * radius) + 10;
     }
 
-    // COLLISION CHECK: Check if intended tile is blocked by Terrain or Existing Entities
-    // We check against `entities` (the array we are currently building) to prevent stacking
-    // Note: logic for 'isTileBlocked' currently ignores elevation (2D check only).
-    // Ideally we should allow stacking if elevation differs, but our blockage logic is 2D.
-    // We'll keep displacement logic for horizontal collisions.
-    const safePos = findNearestOpenTile(mcpX, mcpY, entities, terrain, { ignoreEntityIds: [p.id] });
-    
-    if (safePos) {
-      if (safePos.x !== mcpX || safePos.y !== mcpY) {
-        // We had to move!
-        console.warn(`[stateJsonToEntities] Collision detected for ${p.name}! Displaced from (${mcpX},${mcpY}) to (${safePos.x},${safePos.y})`);
-        mcpX = safePos.x;
-        mcpY = safePos.y;
-        wasDisplaced = true;
-      }
+    // COLLISION CHECK & VERTICALITY
+    // 1. Check if occupied by another ENTITY (Displacement required)
+    const isBlockedByEntity = entities.some(e => {
+        if (e.id === p.id) return false;
+        // Simple 2D overlapping check for now (ignoring vertical stacking for spawning to keep it clean)
+        const dx = Math.abs(e.position.x - (mcpX - 10)); // Viz coords comparison
+        const dz = Math.abs(e.position.z - (mcpY - 10));
+        // Using Entity 1x1 size assumption for spawn check
+        return dx < 0.5 && dz < 0.5;
+    });
+
+    if (isBlockedByEntity) {
+        // Must move!
+        const safePos = findNearestOpenTile(mcpX, mcpY, entities, terrain, { ignoreEntityIds: [p.id] });
+        if (safePos && (safePos.x !== mcpX || safePos.y !== mcpY)) {
+             console.warn(`[stateJsonToEntities] Entity Collision for ${p.name}! Displaced from (${mcpX},${mcpY}) to (${safePos.x},${safePos.y})`);
+             mcpX = safePos.x;
+             mcpY = safePos.y;
+             wasDisplaced = true;
+             // Reset manual elevation if we moved (fall to ground logic)
+             mcpElev = undefined;
+        }
     } else {
-      console.error(`[stateJsonToEntities] Could not find open tile for ${p.name} near (${mcpX},${mcpY})! Spawning anyway (visual clipping may occur).`);
+        // 2. Check Terrain - Do we stand ON TOP or collide?
+        // If terrain exists here, we assume we spawn ON TOP of it.
+        // We do NOT displace for terrain unless it's explicitly "unstandable" (not implemented yet).
+        // So we just accept the position and let the Verticality Logic below handle the Y-snap.
     }
     
     // Viz coords: mcp - 10
@@ -252,17 +262,46 @@ function stateJsonToEntities(data: EncounterStateJson, gridConfig: GridConfig, t
     // Determine logical elevation (feet/units above ground 0)
     let finalElevation = surfaceHeight;
     let isFalling = false;
+    let isFlying = false;
     
     if (mcpElev !== undefined) {
-      // If MCP specifies an elevation
+      // If MCP specifies an elevation (e.g. Flying or explicitly placed)
       if (mcpElev > surfaceHeight + 0.1) {
-        // Higher than support -> Falling (unless flying, but we don't have fly speed yet)
-        isFalling = true;
+        // Higher than support. 
+        // Default assumption: specific placement in air = Falling (Gravity exists).
+        // UNLESS the creature has a specific condition/tag allowing flight.
+        isFalling = true; // Default to falling
+        
+        const flyingKeywords = ['flying', 'fly', 'levitate', 'levitating', 'hover', 'hovering', 'aerial'];
+        const knownFlyingCreatures = ['harpy', 'dragon', 'wyvern', 'bat', 'specter', 'ghost', 'wraith', 'eagle', 'hawk', 'owl', 'pegasus', 'griffon', 'the ace'];
+        
+        const hasFlightCondition = p.conditions.some(c => flyingKeywords.includes(c.toLowerCase()));
+        const hasIntrinsicFlight = knownFlyingCreatures.some(k => p.name.toLowerCase().includes(k));
+        
+        const hasFlightCapability = hasFlightCondition || hasIntrinsicFlight;
+
+        if (hasFlightCapability) {
+            isFalling = false;
+            isFlying = true;
+        }
+
+        // BUT, if they are incapacitated, physics wins again.
+        const incapacitatingConditions = ['Prone', 'Unconscious', 'Incapacitated', 'Paralyzed', 'Stunned', 'Petrified'];
+        const isIncapacitated = p.conditions.some(c => incapacitatingConditions.includes(c));
+        
+        if (isIncapacitated) {
+            isFlying = false;
+            isFalling = true;
+        }
+
         finalElevation = mcpElev; 
       } else {
         // Lower or equal -> snap to surface (cannot bury inside terrain)
         finalElevation = Math.max(mcpElev, surfaceHeight);
       }
+    } else {
+        // No explicit elevation -> Snap to surface (Ground or Top of Obstacle)
+        finalElevation = surfaceHeight;
     }
     
     // Visual Y Position: Elevation + Half Height (0.4)
@@ -289,6 +328,9 @@ function stateJsonToEntities(data: EncounterStateJson, gridConfig: GridConfig, t
     }
     if (isFalling && isCombat && !finalConditions.includes('Falling')) {
       finalConditions.push('Falling');
+    }
+    if (isFlying && isCombat && !finalConditions.includes('Flying')) {
+      finalConditions.push('Flying');
     }
 
     const entity: Entity = {
@@ -326,7 +368,7 @@ function stateJsonToTerrain(data: EncounterStateJson): TerrainFeature[] {
   const terrain: TerrainFeature[] = [];
   
   if (!data.terrain) {
-    console.log('[stateJsonToTerrain] No terrain data in state');
+    // Note: Logging handled by caller if needed
     return terrain;
   }
   
@@ -414,7 +456,17 @@ function stateJsonToTerrain(data: EncounterStateJson): TerrainFeature[] {
     if (isNaN(x) || isNaN(y)) return;
     
     // Calculate height based on propType and heightFeet
-    const heightUnits = prop.heightFeet ? prop.heightFeet / 5 : 1; // 5ft per unit
+    let heightFeet = typeof prop.heightFeet === 'string' ? parseFloat(prop.heightFeet) : prop.heightFeet;
+    if (!heightFeet || isNaN(heightFeet) || heightFeet < 5) {
+        heightFeet = 5; // Minimum 5ft
+    }
+    
+    // Explicit debug for the "Stone Pillar" issue
+    if (prop.label === 'Stone Pillar') {
+       console.log(`[stateJsonToTerrain] Stone Pillar heightFeet: ${prop.heightFeet} -> parsed: ${heightFeet}`);
+    }
+
+    const heightUnits = heightFeet / 5; // 5ft per unit
     
     // Color based on prop type
     const propColors: Record<string, string> = {
@@ -549,22 +601,31 @@ export const useCombatStore = create<CombatState>((set, get) => ({
   setActiveEncounterId: (id) => set({ activeEncounterId: id }),
   
 
-
   /**
    * Update store from a state JSON object
    * Can be called when parsing tool responses with embedded state
    */
   updateFromStateJson: (stateJson: EncounterStateJson) => {
-    const { gridConfig } = get();
+    const { gridConfig, activeEncounterId, terrain: oldTerrain } = get();
     
     // Generate terrain FIRST so we can check collisions against it
-    const terrain = stateJsonToTerrain(stateJson);
-    const entities = stateJsonToEntities(stateJson, gridConfig, terrain);
+    const newTerrain = stateJsonToTerrain(stateJson);
+    
+    // SMART TERRAIN UPDATE: 
+    // If incoming terrain is empty but we're in the same encounter, KEEP old terrain.
+    // This prevents terrain loss when LLM returns partial updates.
+    let terrainToUse = newTerrain;
+    if (newTerrain.length === 0 && stateJson.encounterId === activeEncounterId && oldTerrain.length > 0) {
+        console.warn('[updateFromStateJson] Incoming terrain is empty, preserving existing terrain for same encounter.');
+        terrainToUse = oldTerrain;
+    }
+    
+    const entities = stateJsonToEntities(stateJson, gridConfig, terrainToUse);
     const description = generateBattlefieldDescription(stateJson);
     
     set({
       entities,
-      terrain,  // Now syncing terrain from MCP!
+      terrain: terrainToUse,
       activeEncounterId: stateJson.encounterId,
       currentRound: stateJson.round,
       currentTurnName: stateJson.currentTurn?.name || null,

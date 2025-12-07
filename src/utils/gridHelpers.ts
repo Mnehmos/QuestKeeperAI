@@ -48,7 +48,7 @@ export const getSnappingOffset = (size: CreatureSize): number => {
  * @param size The creature size category
  * @returns [x, y, z] tuple where y is adjusted for base height (0) or center height
  */
-export const calculateGridPosition = (x: number, z: number, size: CreatureSize): [number, number, number] => {
+export const calculateGridPosition = (x: number, z: number, size: CreatureSize, yOverride?: number): [number, number, number] => {
   const offset = getSnappingOffset(size);
   
   // For Y position:
@@ -64,7 +64,7 @@ export const calculateGridPosition = (x: number, z: number, size: CreatureSize):
   // The center y should be height / 2.
   // Let's assume a standard height of 0.8 for now as per Spec 3.1.
   const STANDARD_HEIGHT = 0.8;
-  const y = STANDARD_HEIGHT / 2;
+  const y = yOverride !== undefined ? yOverride : STANDARD_HEIGHT / 2;
 
   return [x + offset, y, z + offset];
 };
@@ -358,4 +358,18 @@ export const getElevationAt = (
   });
 
   return highestY;
+};
+
+/**
+ * Calculates Euclidean distance between two points in 3D space.
+ * 
+ * @param p1 Point 1 {x, y, z}
+ * @param p2 Point 2 {x, y, z}
+ * @returns Distance in units
+ */
+export const calculateDistance3D = (p1: {x: number, y: number, z: number}, p2: {x: number, y: number, z: number}): number => {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const dz = p2.z - p1.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
 };

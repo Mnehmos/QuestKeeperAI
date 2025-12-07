@@ -1,10 +1,12 @@
 import React, { useMemo } from 'react';
 import { Line } from '@react-three/drei';
 import { useCombatStore } from '../../stores/combatStore';
+import { getElevationAt } from '../../utils/gridHelpers';
 
 export const LineOfSight: React.FC = () => {
   const showLineOfSight = useCombatStore(state => state.showLineOfSight);
   const entities = useCombatStore(state => state.entities);
+  const terrain = useCombatStore(state => state.terrain);
   const selectedEntityId = useCombatStore(state => state.selectedEntityId);
   const cursorPosition = useCombatStore(state => state.cursorPosition);
   
@@ -29,8 +31,8 @@ export const LineOfSight: React.FC = () => {
           <group key={target.id}>
              <Line
                 points={[
-                   [source.position.x + 0.5, 0.5, source.position.z + 0.5],
-                   [target.position.x + 0.5, 0.5, target.position.z + 0.5]
+                   [source.position.x + 0.5, source.position.y, source.position.z + 0.5],
+                   [target.position.x + 0.5, target.position.y, target.position.z + 0.5]
                 ]}
                 color={color}
                 lineWidth={1}
@@ -43,21 +45,29 @@ export const LineOfSight: React.FC = () => {
 
       {/* Dynamic Cursor LOS */}
       {cursorPosition && (
-        <Line
-          points={[
-            [source.position.x + 0.5, 0.5, source.position.z + 0.5],
-            // Cursor position is in MCP coords (integers), convert to Viz coords (integers)
-            // Wait, store convention: entities store Viz coords. 
-            // Let's assume cursorPosition will be stored as Viz coords to match entities.
-            [cursorPosition.x + 0.5, 0.5, cursorPosition.y + 0.5]
-          ]}
-          color="#ffff00" // Yellow for cursor
-          lineWidth={2}
-          transparent
-          opacity={0.6}
-          dashed
-          dashScale={2}
-        />
+        (() => {
+           // Calculate cursor elevation
+           const mcpX = cursorPosition.x + 10;
+           const mcpY = cursorPosition.y + 10;
+           const elevation = getElevationAt(mcpX, mcpY, terrain, entities);
+           // Assuming eye height is slightly above surface? Or just surface?
+           const cursorY = elevation + 0.5;
+
+           return (
+            <Line
+              points={[
+                [source.position.x + 0.5, source.position.y, source.position.z + 0.5],
+                [cursorPosition.x + 0.5, cursorY, cursorPosition.y + 0.5]
+              ]}
+              color="#ffff00" // Yellow for cursor
+              lineWidth={2}
+              transparent
+              opacity={0.6}
+              dashed
+              dashScale={2}
+            />
+           );
+        })()
       )}
     </group>
   );

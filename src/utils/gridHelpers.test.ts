@@ -9,6 +9,9 @@ import {
   CREATURE_SIZE_MAP,
   getSnappingOffset,
   calculateGridPosition,
+  calculateDistance3D,
+  getElevationAt,
+  isTileBlocked,
   type CreatureSize,
 } from './gridHelpers';
 
@@ -169,6 +172,116 @@ describe('gridHelpers', () => {
       // Large center should be at the intersection of 4 cells starting at (2, 2)
       expect(largePos[0]).toBe(3.0);
       expect(largePos[2]).toBe(3.0);
+    });
+  });
+  describe('calculateDistance3D', () => {
+    it('should calculate distance between two points on the same plane', () => {
+      const p1 = { x: 0, y: 0, z: 0 };
+      const p2 = { x: 3, y: 0, z: 4 }; // 3-4-5 triangle
+      expect(calculateDistance3D(p1, p2)).toBe(5);
+    });
+
+    it('should calculate distance with vertical difference', () => {
+      const p1 = { x: 0, y: 0, z: 0 };
+      const p2 = { x: 0, y: 3, z: 4 }; // 3-4-5 triangle in Y-Z
+      expect(calculateDistance3D(p1, p2)).toBe(5);
+    });
+
+    it('should calculate full 3D distance', () => {
+      const p1 = { x: 0, y: 0, z: 0 };
+      const p2 = { x: 1, y: 2, z: 2 };
+      // sqrt(1+4+4) = sqrt(9) = 3
+      expect(calculateDistance3D(p1, p2)).toBe(3);
+    });
+  });
+
+  // Mock Data for Elevation and Blocking tests
+  const mockTerrain = [
+    {
+      id: 't1',
+      position: { x: 0, y: 0, z: 0 }, // Fits MCP(10, 10) -> Viz(0,0)
+      dimensions: { width: 1, height: 2, depth: 1 },
+      type: 'obstacle',
+      blocksMovement: true
+    },
+    {
+      id: 't2',
+      position: { x: 5, y: 0, z: 5 }, // Fits MCP(15, 15) -> Viz(5,5)
+      dimensions: { width: 1, height: 1, depth: 1 },
+      type: 'obstacle',
+      blocksMovement: false // Non-blocking terrain
+    }
+  ] as any; // Cast to avoid full type mocking
+
+  const mockEntities = [
+    {
+      id: 'e1',
+      position: { x: 2, y: 0, z: 2 }, // MCP(12, 12)
+      size: 'Medium',
+      type: 'character'
+    },
+    {
+      id: 'e2',
+      position: { x: 3, y: 0, z: 3 }, // MCP(13, 13)
+      size: 'Large', // 2x2, occupies 3,3 to 5,5? No check logic.
+      type: 'monster'
+    }
+  ] as any;
+
+  describe('getElevationAt', () => {
+    // getElevationAt(x, z, ...) takes MCP coords.
+    // Viz x = MCP x - 10.
+    
+    it('should return 0 for empty space', () => {
+      expect(getElevationAt(0, 0, [], [])).toBe(0);
+    });
+
+    it('should return terrain height', () => {
+      // Mock terrain at Viz(0,0) has height 2.
+      // Top Y = 0 + 2/2 = 1? 
+      // Wait, let's check getElevationAt logic:
+      // topY = t.position.y + (t.dimensions.height / 2);
+      // If position.y is center Y? Or bottom Y?
+      // In ThreeJS, position is usually center. 
+      // If box height is 2, and pos.y is 1, bottom is 0, top is 2.
+      // If pos.y is 0, top is 1.
+      // Let's assume input mock pos.y is 0. Height 2. Top is 1. 
+      // Test code logic simply adds half height.
+      
+      // Let's use MCP coord matching Viz(0,0) -> MCP(10, 10).
+      const elev = getElevationAt(10, 10, mockTerrain, []);
+      // t1: y=0, h=2. Top = 1.
+      expect(elev).toBe(1);
+    });
+
+    it('should return entity height for stacking', () => {
+       // Entity e1 at Viz(2,2). MCP(12, 12).
+       // Logic: e.position.y + 0.4.
+       // e1 pos.y is 0. 0 + 0.4 = 0.4.
+       const elev = getElevationAt(12, 12, [], mockEntities);
+       expect(elev).toBe(0.4);
+    });
+  });
+
+  describe('isTileBlocked', () => {
+    it('should be blocked by blocking terrain', () => {
+      // t1 at MCP(10,10) is blocking
+      expect(isTileBlocked(10, 10, [], mockTerrain)).toBe(true);
+    });
+
+    it('should NOT be blocked by non-blocking terrain', () => {
+      // t2 at MCP(15,15) is non-blocking
+      expect(isTileBlocked(15, 15, [], mockTerrain)).toBe(false);
+    });
+
+    it('should be blocked by entity', () => {
+      // e1 at MCP(12,12)
+      expect(isTileBlocked(12, 12, mockEntities, [])).toBe(true);
+    });
+
+    it('should ignore specified entity IDs', () => {
+      // e1 at MCP(12,12) but ignored
+      expect(isTileBlocked(12, 12, mockEntities, [], { ignoreEntityIds: ['e1'] })).toBe(false);
     });
   });
 });
