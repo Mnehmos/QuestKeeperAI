@@ -7,7 +7,7 @@ interface TerrainTooltipProps {
 }
 
 export const TerrainTooltip: React.FC<TerrainTooltipProps> = ({ feature }) => {
-  const { type, dimensions, blocksMovement, coverType, label, description } = feature;
+  const { type, dimensions, blocksMovement, coverType, label, description: _description } = feature;
   
   // Use label for named props (landmarks), fallback to type
   const displayName = label || type;

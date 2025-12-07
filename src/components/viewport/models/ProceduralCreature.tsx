@@ -324,7 +324,7 @@ export const ProceduralCreature: React.FC<ProceduralCreatureProps> = ({
   size,
   color,
   isSelected = false,
-  isEnemy = false,
+  isEnemy: _isEnemy = false, // Reserved for future enemy-specific styling
 }) => {
   const scale = SIZE_SCALE[size];
   const emissive = isSelected ? 0.4 : 0;

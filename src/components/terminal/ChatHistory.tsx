@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, memo } from 'react';
+import React, { useEffect, useCallback, memo, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -6,6 +6,8 @@ import { useChatStore, Message } from '../../stores/chatStore';
 import { ToolCallDisplay } from '../chat/ToolCallDisplay';
 import { StreamingMessage, streamingStyles } from '../chat/StreamingMessage';
 import { useAutoScroll } from '../../hooks';
+import { getRandomTip } from '../../data/tips';
+import { PLAYER_GUIDE, shouldShowPlayerGuide, incrementSessionCount } from '../../data/playerGuide';
 import 'highlight.js/styles/atom-one-dark.css';
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -212,6 +214,26 @@ export const ChatHistory: React.FC = () => {
     const session = state.sessions.find((s) => s.id === state.currentSessionId);
     return session ? session.messages : EMPTY_MESSAGES;
   });
+  
+  const currentSessionId = useChatStore((state) => state.currentSessionId);
+
+  // Random tip for empty state (refreshes when session changes)
+  const currentTip = useMemo(() => getRandomTip(), [currentSessionId]);
+  
+  // Check if this is a new player (first 100 sessions)
+  const showPlayerGuide = useMemo(() => {
+    if (messages.length === 0) {
+      return shouldShowPlayerGuide();
+    }
+    return false;
+  }, [messages.length]);
+  
+  // Track session creation for guide
+  useEffect(() => {
+    if (currentSessionId) {
+      incrementSessionCount();
+    }
+  }, [currentSessionId]);
 
   // Smart auto-scroll that doesn't fight user scrolling
   const { containerRef, anchorRef, scrollToBottomIfNeeded } = useAutoScroll({
@@ -238,6 +260,42 @@ export const ChatHistory: React.FC = () => {
     []
   );
 
+  // Empty state when no messages
+  const EmptyState = () => (
+    <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-8">
+      {showPlayerGuide ? (
+        // Show player guide for new users
+        <div className="max-w-2xl text-left bg-terminal-black/30 border border-terminal-green/30 rounded-lg p-6 overflow-y-auto max-h-[80vh]">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeHighlight]}
+            components={markdownComponents}
+          >
+            {PLAYER_GUIDE}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        // Show tip for returning users
+        <>
+          <div className="text-terminal-green/60 text-6xl">⚔️</div>
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold text-terminal-green">Ready for Adventure</h2>
+            <p className="text-terminal-green/70 max-w-md">
+              Tell the Dungeon Master what you'd like to do. Describe your character's actions, ask questions, or begin your quest!
+            </p>
+          </div>
+          <div className="bg-terminal-black/50 border border-terminal-green/20 rounded-lg p-4 max-w-lg">
+            <p className="text-terminal-amber text-sm">{currentTip}</p>
+          </div>
+          <div className="text-terminal-green/40 text-xs mt-4">
+            Press <kbd className="px-2 py-1 bg-terminal-green/10 border border-terminal-green/30 rounded">Enter</kbd> to send • 
+            <kbd className="px-2 py-1 bg-terminal-green/10 border border-terminal-green/30 rounded ml-1">Shift+Enter</kbd> for new line
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Chat Session Management Header */}
@@ -255,9 +313,13 @@ export const ChatHistory: React.FC = () => {
           overscrollBehavior: 'contain',
         }}
       >
-        {messages.map((msg) => (
-          <ChatMessage key={msg.id} msg={msg} renderMarkdown={renderMarkdown} />
-        ))}
+        {messages.length === 0 ? (
+          <EmptyState />
+        ) : (
+          messages.map((msg) => (
+            <ChatMessage key={msg.id} msg={msg} renderMarkdown={renderMarkdown} />
+          ))
+        )}
         
         {/* Scroll anchor - always at the bottom */}
         <div ref={anchorRef} className="h-px" />

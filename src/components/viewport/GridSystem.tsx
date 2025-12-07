@@ -53,7 +53,6 @@ export const GridSystem: React.FC = () => {
   
   const gridSize = Math.max(bounds.gridSize, 100);
   const divisions = Math.max(bounds.gridSize, 100);
-  const labelInterval = bounds.gridSize > 50 ? 10 : 5;
   const labels: React.ReactElement[] = [];
   
   // Helper to convert MCP coord to visualizer coord  
