@@ -5,6 +5,8 @@ import { useGameStateStore } from '../../stores/gameStateStore';
 import { mcpManager } from '../../services/mcpClient';
 import { llmService } from '../../services/llm/LLMService';
 import { WorldGenerationModal } from './WorldGenerationModal';
+import { CharacterCreationModal } from '../party/CharacterCreationModal';
+import { PartyCreatorModal } from '../party/PartyCreatorModal';
 
 // ============================================
 // Types
@@ -40,6 +42,8 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
 }) => {
   const [currentStep, setCurrentStep] = useState<WizardStep>('details');
   const [showWorldGenModal, setShowWorldGenModal] = useState(false);
+  const [showCharacterModal, setShowCharacterModal] = useState(false);
+  const [showPartyModal, setShowPartyModal] = useState(false);
   const [newWorldName, setNewWorldName] = useState('');
   const [worldGenSeed, setWorldGenSeed] = useState('');
   const [isGeneratingContext, setIsGeneratingContext] = useState(false);
@@ -344,20 +348,44 @@ Generate an immersive opening scene. Describe the environment, atmosphere, and a
                 <h3 className="text-lg font-bold text-terminal-green">
                   👥 Select Party
                 </h3>
-                <button
-                  onClick={() => {
-                    // TODO: Open party creation modal
-                    alert('Party creation coming soon! Use the Party Manager for now.');
-                  }}
-                  className="px-3 py-1 bg-terminal-green/20 border border-terminal-green text-terminal-green text-xs rounded hover:bg-terminal-green/30 transition-colors"
-                >
-                  + New Party
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowCharacterModal(true)}
+                    className="px-3 py-1 bg-terminal-green/20 border border-terminal-green text-terminal-green text-xs rounded hover:bg-terminal-green/30 transition-colors"
+                  >
+                    + New Character
+                  </button>
+                  <button
+                    onClick={() => setShowPartyModal(true)}
+                    className="px-3 py-1 bg-terminal-green/20 border border-terminal-green text-terminal-green text-xs rounded hover:bg-terminal-green/30 transition-colors"
+                  >
+                    + New Party
+                  </button>
+                </div>
               </div>
               {parties.length === 0 ? (
-                <p className="text-terminal-green/70">
-                  No parties available. Create one using the button above or Party Manager.
-                </p>
+                <div className="border-2 border-dashed border-terminal-green/40 rounded-lg p-6 text-center">
+                  <p className="text-terminal-green/70 mb-4">
+                    No parties available yet.
+                  </p>
+                  <p className="text-terminal-green/50 text-sm mb-4">
+                    First create a character, then create a party to organize your adventurers.
+                  </p>
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => setShowCharacterModal(true)}
+                      className="px-4 py-2 bg-terminal-green text-terminal-black rounded font-bold text-sm hover:bg-terminal-green-bright transition-colors"
+                    >
+                      ⚔️ Create Character
+                    </button>
+                    <button
+                      onClick={() => setShowPartyModal(true)}
+                      className="px-4 py-2 border border-terminal-green text-terminal-green rounded font-bold text-sm hover:bg-terminal-green/20 transition-colors"
+                    >
+                      👥 Create Party
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <>
                   <div className="grid gap-2 mb-4">
@@ -635,6 +663,29 @@ Be evocative and concise.`;
         onCancel={() => {
           setShowWorldGenModal(false);
           setWorldGenSeed('');
+        }}
+      />
+
+      {/* Character Creation Modal */}
+      <CharacterCreationModal
+        isOpen={showCharacterModal}
+        onClose={() => setShowCharacterModal(false)}
+        onCreated={async (characterId) => {
+          console.log('[CampaignWizard] Character created:', characterId);
+          setShowCharacterModal(false);
+          // Refresh party store to pick up new character
+          await usePartyStore.getState().syncUnassignedCharacters();
+          await useGameStateStore.getState().syncState(true);
+        }}
+      />
+
+      {/* Party Creator Modal */}
+      <PartyCreatorModal
+        isOpen={showPartyModal}
+        onClose={async () => {
+          setShowPartyModal(false);
+          // Refresh parties after modal closes
+          await usePartyStore.getState().syncParties();
         }}
       />
     </div>
