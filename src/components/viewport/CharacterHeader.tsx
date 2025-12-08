@@ -41,7 +41,7 @@ export const CharacterHeader: React.FC = () => {
             {activeCharacter.name}
           </div>
           <div className="text-terminal-green/60 text-xs">
-            LVL {activeCharacter.level} {activeCharacter.class}
+            LVL {activeCharacter.level} {activeCharacter.race ? `${activeCharacter.race} ` : ''}{activeCharacter.class}
           </div>
         </div>
       </div>

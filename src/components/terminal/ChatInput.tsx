@@ -357,7 +357,7 @@ export const ChatInput: React.FC = () => {
         // Character
         if (activeChar) {
           status += `### Active Character\n`;
-          status += `**${activeChar.name}** - Level ${activeChar.level} ${activeChar.class || ''}\n`;
+          status += `**${activeChar.name}** - Level ${activeChar.level} ${activeChar.race ? `${activeChar.race} ` : ''}${activeChar.class || ''}\n`;
           status += `HP: ${activeChar.hp?.current || 0}/${activeChar.hp?.max || 0}\n\n`;
         } else {
           status += `### Active Character\n*No character selected*\n\n`;
@@ -479,6 +479,8 @@ export const ChatInput: React.FC = () => {
   
           let output = `## ${char.name}\n\n`;
           output += `**ID:** \`${char.id}\`\n`;
+          output += `**Race:** ${char.race || 'Unknown'}\n`;
+          output += `**Class:** ${char.class || 'Adventurer'}\n`;
           output += `**Level:** ${char.level || 1}\n`;
           output += `**HP:** ${char.hp || 0}/${char.maxHp || 0}\n`;
           output += `**AC:** ${char.ac || 10}\n\n`;
@@ -490,6 +492,20 @@ export const ChatInput: React.FC = () => {
             output += `| ${char.stats.str || 10} | ${char.stats.dex || 10} | ${char.stats.con || 10} | ${char.stats.int || 10} | ${char.stats.wis || 10} | ${char.stats.cha || 10} |\n`;
           }
   
+          if (char.inventory && char.inventory.length > 0) {
+            output += `\n### Inventory\n`;
+            for (const item of char.inventory) {
+              output += `- ${item.name}${item.quantity > 1 ? ` (x${item.quantity})` : ''}${item.equipped ? ' [E]' : ''}\n`;
+            }
+          }
+  
+          if (char.conditions && char.conditions.length > 0) {
+            output += `\n### Conditions\n`;
+            for (const cond of char.conditions) {
+              output += `- ${cond}\n`;
+            }
+          }
+  
           return { content: output };
         } catch (error: any) {
           return { content: `Error getting character: ${error.message}`, type: 'error' };
@@ -497,19 +513,42 @@ export const ChatInput: React.FC = () => {
       }
   
       case 'party': {
-        const party = gameState.party;
-        if (party.length === 0) {
-          return { content: `*No party members*\n\nCreate characters using the AI.` };
-        }
+        // Use partyStore for accurate party membership data
+        try {
+          const { usePartyStore } = await import('../../stores/partyStore');
+          const partyState = usePartyStore.getState();
+          const activeParty = partyState.getActiveParty();
+          
+          if (!activeParty || activeParty.members.length === 0) {
+            return { content: `*No party members*\n\nCreate characters using the AI.` };
+          }
   
-        let output = `## Party (${party.length})\n\n`;
-        for (const member of party) {
-          const isActive = member.id === gameState.activeCharacter?.id;
-          output += `### ${member.name} ${isActive ? '(Active)' : ''}\n`;
-          output += `Level ${member.level || 1} ${member.class || ''}\n`;
-          output += `HP: ${member.hp?.current || 0}/${member.hp?.max || 0}\n\n`;
+          let output = `## ${activeParty.name} (${activeParty.members.length} members)\n\n`;
+          for (const member of activeParty.members) {
+            const char = member.character;
+            const isActive = member.characterId === gameState.activeCharacter?.id;
+            const roleIcon = member.role === 'leader' ? '★ ' : member.isActive ? '▶ ' : '';
+            output += `### ${roleIcon}${char.name} ${isActive ? '(Active)' : ''}\n`;
+            output += `**${char.race || 'Unknown'}** ${char.class || 'Adventurer'}, Level ${char.level || 1}\n`;
+            output += `HP: ${char.hp || 0}/${char.maxHp || 0} | AC: ${char.ac || 10}\n\n`;
+          }
+          return { content: output };
+        } catch (error: any) {
+          // Fallback to gameState.party if partyStore fails
+          const party = gameState.party;
+          if (party.length === 0) {
+            return { content: `*No party members*\n\nCreate characters using the AI.` };
+          }
+  
+          let output = `## Party (${party.length})\n\n`;
+          for (const member of party) {
+            const isActive = member.id === gameState.activeCharacter?.id;
+            output += `### ${member.name} ${isActive ? '(Active)' : ''}\n`;
+            output += `**${member.race || 'Unknown'}** ${member.class || 'Adventurer'}, Level ${member.level || 1}\n`;
+            output += `HP: ${member.hp?.current || 0}/${member.hp?.max || 0}\n\n`;
+          }
+          return { content: output };
         }
-        return { content: output };
       }
   
       case 'inventory': {

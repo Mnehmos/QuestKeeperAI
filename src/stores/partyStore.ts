@@ -180,7 +180,7 @@ function parseCharacterSummary(data: any): CharacterSummary | null {
     id: data.id,
     name: data.name || 'Unknown',
     level: data.level || 1,
-    class: data.class || 'Adventurer',
+    class: data.class || data.characterClass || 'Adventurer',
     race: data.race,
     hp: data.hp || 0,
     maxHp: data.maxHp || data.max_hp || data.hp || 1,

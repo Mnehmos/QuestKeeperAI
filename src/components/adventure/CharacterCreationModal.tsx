@@ -529,6 +529,8 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
 
             const result = await mcpManager.gameStateClient.callTool('create_character', {
                 name,
+                race: raceData.name,
+                class: classData.name,
                 hp: maxHp,
                 maxHp: maxHp,
                 ac: baseAc,

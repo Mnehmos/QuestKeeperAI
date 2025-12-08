@@ -193,13 +193,13 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
 
     // Parse saving throw proficiencies based on class
     const savingThrowProficiencies = char.savingThrowProficiencies ||
-      getDefaultSavingThrowProficiencies(char.class || 'Adventurer');
+      getDefaultSavingThrowProficiencies(char.class || char.characterClass || 'Adventurer');
 
     return {
       id: char.id,
       name: char.name,
       level: level,
-      class: char.class || 'Adventurer',
+      class: char.class || char.characterClass || 'Adventurer',
       race: char.race,
       hp: {
         current: char.hp || 0,

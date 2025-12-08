@@ -183,6 +183,8 @@ export const WorldMapCanvas: React.FC = () => {
 
       case 'biomes':
       default: {
+        if (hasRiver) return '#4682b4'; // Steel Blue for rivers
+        
         const color = BIOME_COLORS[biomeName] || '#666666';
         if (isWater) return color;
         

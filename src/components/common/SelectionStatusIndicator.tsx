@@ -83,7 +83,7 @@ export const SelectionStatusIndicator: React.FC<SelectionStatusIndicatorProps> =
             </span>
             {activeCharacter && (
               <span className="text-terminal-green/50 ml-2">
-                Lv{activeCharacter.level} {activeCharacter.class}
+                Lv{activeCharacter.level} {activeCharacter.race ? `${activeCharacter.race} ` : ''}{activeCharacter.class}
               </span>
             )}
             {showDebugIds && activeCharacterId && (

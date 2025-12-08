@@ -176,7 +176,7 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
                 )}
               </div>
               <div className="text-xs text-terminal-green/60">
-                Lv{character.level} {character.class}
+                Lv{character.level} {character.race ? `${character.race} ` : ''}{character.class}
               </div>
             </div>
 
