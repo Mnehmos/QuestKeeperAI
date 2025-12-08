@@ -18,6 +18,7 @@ vi.mock('../../stores/combatStore', () => ({
           id: 'char-gandalf',
           name: 'Gandalf',
           type: 'character',
+          isCurrentTurn: true,
           metadata: { hp: { current: 80, max: 100 }, ac: 15, conditions: [] }
         },
         {

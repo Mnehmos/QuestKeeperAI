@@ -49,7 +49,11 @@ export const CharacterQuickView: React.FC = () => {
             {meta.conditions && meta.conditions.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                     {meta.conditions.map(c => (
-                        <span key={c} className="text-[10px] bg-yellow-900/50 text-yellow-200 border border-yellow-700/50 px-2 py-0.5 rounded-full">
+                        <span 
+                            key={c} 
+                            title={c}
+                            className="text-[10px] bg-yellow-900/50 text-yellow-200 border border-yellow-700/50 px-2 py-0.5 rounded-full cursor-help"
+                        >
                            {c}
                         </span>
                     ))}

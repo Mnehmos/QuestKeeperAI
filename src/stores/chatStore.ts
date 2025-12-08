@@ -37,6 +37,7 @@ interface ChatState {
   currentSessionId: string | null;
   isTyping: boolean;
   streamingMessageId: string | null;
+  prefillInput: string | null; // Text to prefill into chat input from HUD
 
   // Session Management
   createSession: () => string;
@@ -48,6 +49,9 @@ interface ChatState {
   addMessage: (message: Message) => void;
   clearHistory: () => void; // Clears current session history
   setTyping: (isTyping: boolean) => void;
+
+  // Input prefill from HUD components
+  setPrefillInput: (text: string | null) => void;
 
   // Streaming support methods - optimized for batched updates
   startStreamingMessage: (id: string, sender: MessageSender) => void;
@@ -71,6 +75,7 @@ export const useChatStore = create<ChatState>()(
       currentSessionId: null,
       isTyping: false,
       streamingMessageId: null,
+      prefillInput: null,
 
       createSession: () => {
         const newSession: ChatSession = {
@@ -170,6 +175,8 @@ export const useChatStore = create<ChatState>()(
         })),
 
       setTyping: (isTyping) => set({ isTyping }),
+
+      setPrefillInput: (text) => set({ prefillInput: text }),
 
       startStreamingMessage: (id, sender) =>
         set((state) => {

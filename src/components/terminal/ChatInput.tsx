@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { mcpManager } from '../../services/mcpClient';
 import { useGameStateStore } from '../../stores/gameStateStore';
@@ -88,6 +88,18 @@ export const ChatInput: React.FC = () => {
   const updateStreamingMessage = useChatStore((state) => state.updateStreamingMessage);
   const updateToolStatus = useChatStore((state) => state.updateToolStatus);
   const finalizeStreamingMessage = useChatStore((state) => state.finalizeStreamingMessage);
+  
+  // HUD Prefill integration
+  const prefillInput = useChatStore((state) => state.prefillInput);
+  const setPrefillInput = useChatStore((state) => state.setPrefillInput);
+  
+  // Consume prefill input when set by HUD components
+  useEffect(() => {
+    if (prefillInput) {
+      setInput(prefillInput);
+      setPrefillInput(null); // Clear after consuming
+    }
+  }, [prefillInput, setPrefillInput]);
 
   // Reusable LLM Submission function
   const submitToLLM = useCallback(async (injectedPrompt?: string) => {
@@ -180,7 +192,7 @@ export const ChatInput: React.FC = () => {
         // Inject secrets context
         if (activeWorldId) {
           try {
-            const secretsResult = await mcpManager.gameStateClient.callTool('get_secrets', { worldId: activeWorldId });
+            const secretsResult = await mcpManager.gameStateClient.callTool('get_secrets_for_context', { worldId: activeWorldId });
             const secretsText = secretsResult?.content?.[0]?.text || '{}';
             let secrets;
             try {
@@ -853,7 +865,7 @@ export const ChatInput: React.FC = () => {
           const worldId = gameState.activeWorldId;
           if (!worldId) return { content: `No active world. Select a world first.`, type: 'error' };
   
-          const result = await mcpManager.gameStateClient.callTool('get_secrets', { worldId });
+          const result = await mcpManager.gameStateClient.callTool('get_secrets_for_context', { worldId });
           const text = result?.content?.[0]?.text || '{}';
           
           let secrets;

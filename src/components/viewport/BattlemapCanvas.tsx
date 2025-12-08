@@ -7,6 +7,7 @@ import { EntityLayer } from './EntityLayer';
 import { TerrainLayer } from './Terrain';
 import { LineOfSight } from './LineOfSight';
 import { VisualizationControls } from './VisualizationControls';
+import { CombatHUD } from '../hud/CombatHUD';
 import { useCombatStore } from '../../stores/combatStore';
 
 export const BattlemapCanvas: React.FC = () => {
@@ -30,7 +31,9 @@ export const BattlemapCanvas: React.FC = () => {
       )}
       
       <VisualizationControls />
-
+      
+      {/* Combat HUD Overlay */}
+      <CombatHUD />
       <Canvas
         shadows
         camera={{ position: [5, 5, 5], fov: 50 }}
