@@ -62,10 +62,19 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   const worlds = useGameStateStore((state) => state.worlds);
   const parties = usePartyStore((state) => state.parties);
   const partyDetails = usePartyStore((state) => state.partyDetails);
+  const unassignedCharacters = usePartyStore((state) => state.unassignedCharacters);
+  const syncUnassignedCharacters = usePartyStore((state) => state.syncUnassignedCharacters);
   const createSession = useSessionStore((state) => state.createSession);
 
   // Party details are already available through partyDetails map
   // No need to fetch - the main view already loads them
+  
+  // Sync unassigned characters when on party step
+  useEffect(() => {
+    if (isOpen && currentStep === 'party') {
+      syncUnassignedCharacters();
+    }
+  }, [isOpen, currentStep, syncUnassignedCharacters]);
 
   // Reset wizard only when modal OPENS, not when stores sync
   const [hasInitialized, setHasInitialized] = useState(false);
@@ -365,26 +374,64 @@ Generate an immersive opening scene. Describe the environment, atmosphere, and a
               </div>
               {parties.length === 0 ? (
                 <div className="border-2 border-dashed border-terminal-green/40 rounded-lg p-6 text-center">
-                  <p className="text-terminal-green/70 mb-4">
-                    No parties available yet.
-                  </p>
-                  <p className="text-terminal-green/50 text-sm mb-4">
-                    First create a character, then create a party to organize your adventurers.
-                  </p>
-                  <div className="flex gap-3 justify-center">
-                    <button
-                      onClick={() => setShowCharacterModal(true)}
-                      className="px-4 py-2 bg-terminal-green text-terminal-black rounded font-bold text-sm hover:bg-terminal-green-bright transition-colors"
-                    >
-                      ⚔️ Create Character
-                    </button>
-                    <button
-                      onClick={() => setShowPartyModal(true)}
-                      className="px-4 py-2 border border-terminal-green text-terminal-green rounded font-bold text-sm hover:bg-terminal-green/20 transition-colors"
-                    >
-                      👥 Create Party
-                    </button>
-                  </div>
+                  {unassignedCharacters.length > 0 ? (
+                    <>
+                      {/* Characters exist but no party yet */}
+                      <div className="bg-terminal-green/10 border border-terminal-green/30 rounded p-3 mb-4">
+                        <p className="text-terminal-green font-bold mb-2">
+                          ✓ {unassignedCharacters.length} Character{unassignedCharacters.length > 1 ? 's' : ''} Ready
+                        </p>
+                        <div className="flex flex-wrap gap-2 justify-center">
+                          {unassignedCharacters.map(char => (
+                            <span key={char.id} className="px-2 py-1 bg-terminal-green/20 rounded text-xs text-terminal-green">
+                              {char.name} - Lvl {char.level} {char.class}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <p className="text-terminal-green/70 mb-4">
+                        Now create a party to organize your adventurers!
+                      </p>
+                      <div className="flex gap-3 justify-center">
+                        <button
+                          onClick={() => setShowPartyModal(true)}
+                          className="px-4 py-2 bg-terminal-green text-terminal-black rounded font-bold text-sm hover:bg-terminal-green-bright transition-colors"
+                        >
+                          👥 Create Party
+                        </button>
+                        <button
+                          onClick={() => setShowCharacterModal(true)}
+                          className="px-4 py-2 border border-terminal-green text-terminal-green rounded font-bold text-sm hover:bg-terminal-green/20 transition-colors"
+                        >
+                          + Add Another Character
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* No characters yet */}
+                      <p className="text-terminal-green/70 mb-4">
+                        No parties available yet.
+                      </p>
+                      <p className="text-terminal-green/50 text-sm mb-4">
+                        First create a character, then create a party to organize your adventurers.
+                      </p>
+                      <div className="flex gap-3 justify-center">
+                        <button
+                          onClick={() => setShowCharacterModal(true)}
+                          className="px-4 py-2 bg-terminal-green text-terminal-black rounded font-bold text-sm hover:bg-terminal-green-bright transition-colors"
+                        >
+                          ⚔️ Create Character
+                        </button>
+                        <button
+                          onClick={() => setShowPartyModal(true)}
+                          className="px-4 py-2 border border-terminal-green text-terminal-green rounded font-bold text-sm hover:bg-terminal-green/20 transition-colors"
+                        >
+                          👥 Create Party
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
