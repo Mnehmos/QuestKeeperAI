@@ -1,5 +1,6 @@
 import React from 'react';
 import { useGameStateStore, CharacterStats } from '../../stores/gameStateStore';
+import { ConditionList } from '../common/ConditionBadge';
 
 /**
  * Displays status of party members.
@@ -52,6 +53,11 @@ export const PartyStatusBar: React.FC = () => {
                     <span className="text-green-500">HP {char.hp.current}/{char.hp.max}</span>
                     <span className="text-green-600">AC {char.armorClass || 10}</span>
                 </div>
+                {char.conditions && char.conditions.length > 0 && (
+                  <div className="mt-2 text-left">
+                    <ConditionList conditions={char.conditions} size="sm" limit={3} />
+                  </div>
+                )}
              </div>
            </div>
          );

@@ -95,6 +95,45 @@ export interface CharacterCurrencies {
 
 export type CharacterType = 'pc' | 'npc' | 'enemy' | 'neutral';
 
+
+export interface SpellSlot {
+  current: number;
+  max: number;
+}
+
+export interface SpellSlots {
+  level1: SpellSlot;
+  level2: SpellSlot;
+  level3: SpellSlot;
+  level4: SpellSlot;
+  level5: SpellSlot;
+  level6: SpellSlot;
+  level7: SpellSlot;
+  level8: SpellSlot;
+  level9: SpellSlot;
+}
+
+export interface PactMagicSlots {
+  current: number;
+  max: number;
+  slotLevel: number;
+}
+
+export interface CustomEffect {
+  id: number;
+  name: string;
+  description: string | null;
+  category: 'boon' | 'curse' | 'neutral' | 'transformative';
+  power_level: number;
+  source_type: string;
+  source_entity_name?: string | null;
+  duration_type: string;
+  duration_value?: number | null;
+  rounds_remaining?: number | null;
+  mechanics: any[];
+}
+
+
 export interface CharacterStats {
   id?: string;
   name: string;
@@ -116,12 +155,26 @@ export interface CharacterStats {
     weapons: string[];
     other: string[];
   };
+
+
+
   conditions?: CharacterCondition[];
   currencies?: CharacterCurrencies;
+  customEffects?: CustomEffect[];
   savingThrowProficiencies?: ('str' | 'dex' | 'con' | 'int' | 'wis' | 'cha')[];
   speed?: number;
   armorClass?: number; // Calculated or overridden AC
   characterType?: CharacterType; // pc, npc, enemy, neutral
+  
+  // Spellcasting
+  spellSlots?: SpellSlots;
+  pactMagicSlots?: PactMagicSlots;
+  knownSpells?: string[];
+  preparedSpells?: string[];
+  cantripsKnown?: string[];
+  spellcastingAbility?: string;
+  spellSaveDC?: number;
+  spellAttackBonus?: number;
 }
 
 interface GameState {
@@ -230,7 +283,17 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
       savingThrowProficiencies,
       speed: char.speed ?? 30,
       armorClass: char.armorClass ?? char.ac,
-      characterType: char.characterType || char.character_type || 'pc'
+      characterType: char.characterType || char.character_type || 'pc',
+      
+      // Spellcasting
+      spellSlots: char.spellSlots,
+      pactMagicSlots: char.pactMagicSlots,
+      knownSpells: char.knownSpells,
+      preparedSpells: char.preparedSpells,
+      cantripsKnown: char.cantripsKnown,
+      spellcastingAbility: char.spellcastingAbility,
+      spellSaveDC: char.spellSaveDC,
+      spellAttackBonus: char.spellAttackBonus,
     };
   } catch (error) {
     console.error('[parseCharacterFromJson] Failed to parse character:', error);
@@ -582,7 +645,8 @@ export const useGameStateStore = create<GameState>()(
             // ============================================
             const batchResults = await executeBatchToolCalls(mcpManager.gameStateClient, [
               { name: 'get_inventory_detailed', args: { characterId: activeCharId } },
-              { name: 'get_quest_log', args: { characterId: activeCharId } }
+              { name: 'get_quest_log', args: { characterId: activeCharId } },
+              { name: 'get_custom_effects', args: { target_id: activeCharId, target_type: 'character', include_inactive: false } }
             ]);
 
             // Process inventory result
@@ -593,12 +657,58 @@ export const useGameStateStore = create<GameState>()(
               if (inventoryData) {
                 const items = parseInventoryFromJson(inventoryData);
                 console.log('[GameStateStore] Parsed', items.length, 'inventory items');
+
+                // UNIFIED CURRENCY LOGIC
+                // Parse currency from inventory items
+                const calculatedCurrencies: CharacterCurrencies = {
+                  gold: 0, silver: 0, copper: 0, platinum: 0, electrum: 0
+                };
+                
+                items.forEach(item => {
+                  const name = item.name.toLowerCase();
+                  if (name.includes('gold piece')) calculatedCurrencies.gold += item.quantity;
+                  else if (name.includes('silver piece')) calculatedCurrencies.silver += item.quantity;
+                  else if (name.includes('copper piece')) calculatedCurrencies.copper += item.quantity;
+                  else if (name.includes('platinum piece')) calculatedCurrencies.platinum = (calculatedCurrencies.platinum || 0) + item.quantity;
+                  else if (name.includes('electrum piece')) calculatedCurrencies.electrum = (calculatedCurrencies.electrum || 0) + item.quantity;
+                });
+                
+                console.log('[GameStateStore] Calculated inventory currency:', calculatedCurrencies);
+                
+                // Process Custom Effects
+                const effectsToolResult = batchResults.find(r => r.name === 'get_custom_effects');
+                let customEffects: CustomEffect[] = [];
+                if (effectsToolResult && !effectsToolResult.error) {
+                    const content = effectsToolResult.result?.content?.[0]?.text;
+                    if (content) {
+                        const match = content.match(/<!-- EFFECT_DATA\n([\s\S]*?)\nEFFECT_DATA -->/);
+                        if (match && match[1]) {
+                             try {
+                                 customEffects = JSON.parse(match[1]);
+                                 console.log('[GameStateStore] Parsed', customEffects.length, 'custom effects');
+                             } catch (e) {
+                                 console.warn('[GameStateStore] Failed to parse custom effects JSON:', e);
+                             }
+                        }
+                    }
+                }
                 
                 set((state) => {
                   // Update equipment from inventory if available
-                  let newActiveCharacter = state.activeCharacter;
+                  let newActiveCharacter = state.activeCharacter ? { ...state.activeCharacter } : null;
                   
                   if (newActiveCharacter) {
+                    newActiveCharacter.customEffects = customEffects;
+                    // Update currencies
+                    if (!newActiveCharacter.currencies) {
+                      newActiveCharacter.currencies = calculatedCurrencies;
+                    } else {
+                      // Merge or overwrite? Overwrite is safer for "syncing" with inventory
+                      newActiveCharacter.currencies = {
+                        ...newActiveCharacter.currencies,
+                         ...calculatedCurrencies
+                      };
+                    }
                     let armor = newActiveCharacter.equipment?.armor || 'None';
                     let weapons: string[] = newActiveCharacter.equipment?.weapons || [];
                     let other: string[] = newActiveCharacter.equipment?.other || [];

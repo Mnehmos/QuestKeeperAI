@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import { useGameStateStore, CharacterCondition } from '../../stores/gameStateStore';
+import { useGameStateStore } from '../../stores/gameStateStore';
 import { usePartyStore } from '../../stores/partyStore';
 import { dnd5eItems } from '../../data/dnd5eItems';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { SpellBookView } from '../character/SpellBookView';
+import { ConditionsDisplay } from '../character/ConditionsDisplay';
+import CustomEffectsDisplay from '../character/CustomEffectsDisplay';
 
 // Armor type categories for AC calculation
 type ArmorCategory = 'light' | 'medium' | 'heavy' | 'none';
@@ -90,36 +93,10 @@ function calculateAC(
   return { total, breakdown: parts.join(' ') };
 }
 
-// Condition color mapping
-const CONDITION_COLORS: Record<string, string> = {
-  'blinded': 'bg-gray-600',
-  'charmed': 'bg-pink-600',
-  'deafened': 'bg-gray-500',
-  'frightened': 'bg-purple-600',
-  'grappled': 'bg-yellow-600',
-  'incapacitated': 'bg-red-800',
-  'invisible': 'bg-blue-400/50',
-  'paralyzed': 'bg-yellow-700',
-  'petrified': 'bg-stone-500',
-  'poisoned': 'bg-green-600',
-  'prone': 'bg-amber-600',
-  'restrained': 'bg-orange-600',
-  'stunned': 'bg-yellow-500',
-  'unconscious': 'bg-red-900',
-  'exhaustion': 'bg-gray-700',
-  'blessed': 'bg-yellow-400',
-  'hasted': 'bg-cyan-500',
-  'concentrating': 'bg-blue-500',
-};
-
-function getConditionColor(conditionName: string): string {
-  const lower = conditionName.toLowerCase();
-  return CONDITION_COLORS[lower] || 'bg-terminal-green/40';
-}
-
 export const CharacterSheetView: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false);
+  const [viewTab, setViewTab] = useState<'stats' | 'spells' | 'effects'>('stats');
 
   const activeCharacter = useGameStateStore(state => state.activeCharacter);
   const activeCharacterId = useGameStateStore(state => state.activeCharacterId);
@@ -128,6 +105,7 @@ export const CharacterSheetView: React.FC = () => {
 
   const deleteCharacter = usePartyStore(state => state.deleteCharacter);
   const isLoading = usePartyStore(state => state.isLoading);
+  const updateCharacter = usePartyStore(state => state.updateCharacter);
 
   // Get party members for character selector
   const activePartyId = usePartyStore(state => state.activePartyId);
@@ -221,18 +199,6 @@ export const CharacterSheetView: React.FC = () => {
     </div>
   );
 
-  const ConditionBadge = ({ condition }: { condition: CharacterCondition }) => (
-    <span
-      className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded ${getConditionColor(condition.name)} text-white`}
-      title={condition.source ? `Source: ${condition.source}` : undefined}
-    >
-      {condition.name}
-      {condition.duration && condition.duration > 0 && (
-        <span className="ml-1 opacity-75">({condition.duration}r)</span>
-      )}
-    </span>
-  );
-
   return (
     <>
     <div className="h-full w-full overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-terminal-green/20 scrollbar-track-transparent">
@@ -320,177 +286,268 @@ export const CharacterSheetView: React.FC = () => {
         </div>
 
         {/* Conditions Display */}
-        {conditions && conditions.length > 0 && (
-          <div className="mt-4">
-            <span className="text-xs text-terminal-green/60 uppercase tracking-wider mr-2">CONDITIONS:</span>
-            <div className="inline-flex flex-wrap gap-2 mt-1">
-              {conditions.map((condition, idx) => (
-                <ConditionBadge key={`${condition.name}-${idx}`} condition={condition} />
-              ))}
-            </div>
-          </div>
-        )}
+        <div className="mt-4">
+          <ConditionsDisplay
+            conditions={conditions || []}
+            onAddCondition={async (condition) => {
+              if (activeCharacter?.id) {
+                await updateCharacter(activeCharacter.id, {
+                  addConditions: [condition]
+                });
+                await syncState(true);
+              }
+            }}
+            onRemoveCondition={async (conditionName) => {
+              if (activeCharacter?.id) {
+                await updateCharacter(activeCharacter.id, {
+                  removeConditions: [conditionName]
+                });
+                await syncState(true);
+              }
+            }}
+          />
+        </div>
       </div>
 
       {/* Ability Scores Grid */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <StatBlock label="STR" value={stats.str} />
-        <StatBlock label="DEX" value={stats.dex} />
-        <StatBlock label="CON" value={stats.con} />
-        <StatBlock label="INT" value={stats.int} />
-        <StatBlock label="WIS" value={stats.wis} />
-        <StatBlock label="CHA" value={stats.cha} />
+      {/* Tabs Navigation */}
+      <div className="flex border-b border-terminal-green/30 mb-6">
+        <button
+          className={`px-6 py-2 font-bold transition-colors ${
+            viewTab === 'stats' 
+              ? 'bg-terminal-green/20 text-terminal-green-bright border-b-2 border-terminal-green' 
+              : 'text-terminal-green/60 hover:text-terminal-green hover:bg-terminal-green/5'
+          }`}
+          onClick={() => setViewTab('stats')}
+        >
+          STATS & GEAR
+        </button>
+        <button
+          className={`px-6 py-2 font-bold transition-colors ${
+            viewTab === 'spells' 
+              ? 'bg-terminal-green/20 text-terminal-green-bright border-b-2 border-terminal-green' 
+              : 'text-terminal-green/60 hover:text-terminal-green hover:bg-terminal-green/5'
+          }`}
+          onClick={() => setViewTab('spells')}
+        >
+          SPELL BOOK
+        </button>
+        <button
+          className={`px-6 py-2 font-bold transition-colors ${
+            viewTab === 'effects' 
+              ? 'bg-terminal-green/20 text-terminal-green-bright border-b-2 border-terminal-green' 
+              : 'text-terminal-green/60 hover:text-terminal-green hover:bg-terminal-green/5'
+          }`}
+          onClick={() => setViewTab('effects')}
+        >
+          EFFECTS
+        </button>
       </div>
 
-      {/* Combat Stats + Saving Throws */}
-      <div className="grid grid-cols-2 gap-6 mb-6">
-        <div className="border border-terminal-green/30 p-4">
-          <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">COMBAT</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-start">
-              <span className="text-terminal-green/60">ARMOR CLASS</span>
-              <div className="text-right">
-                <span className="text-2xl font-bold">{acCalc.total}</span>
-                <div className="text-xs text-terminal-green/50">{acCalc.breakdown}</div>
+      {viewTab === 'stats' ? (
+        <>
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <StatBlock label="STR" value={stats.str} />
+            <StatBlock label="DEX" value={stats.dex} />
+            <StatBlock label="CON" value={stats.con} />
+            <StatBlock label="INT" value={stats.int} />
+            <StatBlock label="WIS" value={stats.wis} />
+            <StatBlock label="CHA" value={stats.cha} />
+          </div>
+
+          {/* Combat Stats + Saving Throws */}
+          <div className="grid grid-cols-2 gap-6 mb-6">
+            <div className="border border-terminal-green/30 p-4">
+              <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">COMBAT</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-start">
+                  <span className="text-terminal-green/60">ARMOR CLASS</span>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold">{acCalc.total}</span>
+                    <div className="text-xs text-terminal-green/50">{acCalc.breakdown}</div>
+                  </div>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-terminal-green/60">INITIATIVE</span>
+                  <span>{formatMod(dexMod)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-terminal-green/60">SPEED</span>
+                  <span>{speed || 30} ft</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-terminal-green/60">PROFICIENCY</span>
+                  <span>{formatMod(proficiencyBonus)}</span>
+                </div>
+              </div>
+              <div className="mt-4">
+                <button
+                  onClick={() => syncState(true)}
+                  className="text-xs border border-terminal-green px-2 py-1 text-terminal-green hover:bg-terminal-green/10 transition-colors"
+                >
+                  Refresh from MCP
+                </button>
               </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-terminal-green/60">INITIATIVE</span>
-              <span>{formatMod(dexMod)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-terminal-green/60">SPEED</span>
-              <span>{speed || 30} ft</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-terminal-green/60">PROFICIENCY</span>
-              <span>{formatMod(proficiencyBonus)}</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            <button
-              onClick={() => syncState(true)}
-              className="text-xs border border-terminal-green px-2 py-1 text-terminal-green hover:bg-terminal-green/10 transition-colors"
-            >
-              Refresh from MCP
-            </button>
-          </div>
-        </div>
 
-        {/* Saving Throws */}
-        <div className="border border-terminal-green/30 p-4">
-          <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">SAVING THROWS</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {savingThrows.map(({ key, label, stat }) => {
-              const isProficient = savingThrowProficiencies?.includes(key) ?? false;
-              const mod = getMod(stat);
-              const totalMod = isProficient ? mod + proficiencyBonus : mod;
-              return (
-                <div
-                  key={key}
-                  className={`flex justify-between items-center p-2 rounded ${
-                    isProficient ? 'bg-terminal-green/20 border border-terminal-green/40' : 'bg-terminal-green/5'
-                  }`}
-                >
-                  <span className="text-sm">
-                    {isProficient && <span className="text-terminal-green mr-1">●</span>}
-                    {label}
-                  </span>
-                  <span className={`font-bold ${isProficient ? 'text-terminal-green' : ''}`}>
-                    {formatMod(totalMod)}
-                  </span>
+            {/* Saving Throws */}
+            <div className="border border-terminal-green/30 p-4">
+              <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">SAVING THROWS</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {savingThrows.map(({ key, label, stat }) => {
+                  const isProficient = savingThrowProficiencies?.includes(key) ?? false;
+                  const mod = getMod(stat);
+                  const totalMod = isProficient ? mod + proficiencyBonus : mod;
+                  return (
+                    <div
+                      key={key}
+                      className={`flex justify-between items-center p-2 rounded ${
+                        isProficient ? 'bg-terminal-green/20 border border-terminal-green/40' : 'bg-terminal-green/5'
+                      }`}
+                    >
+                      <span className="text-sm">
+                        {isProficient && <span className="text-terminal-green mr-1">●</span>}
+                        {label}
+                      </span>
+                      <span className={`font-bold ${isProficient ? 'text-terminal-green' : ''}`}>
+                        {formatMod(totalMod)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Currencies + Equipment */}
+          <div className="grid grid-cols-2 gap-6 mb-6">
+            {/* Currencies */}
+            <div className="border border-terminal-green/30 p-4">
+              <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">CURRENCY</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-2 bg-yellow-900/20 border border-yellow-600/30 rounded">
+                  <div className="text-2xl font-bold text-yellow-500">{currencies?.gold ?? 0}</div>
+                  <div className="text-xs text-yellow-600/80 uppercase">Gold</div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      {/* Currencies + Equipment */}
-      <div className="grid grid-cols-2 gap-6 mb-6">
-        {/* Currencies */}
-        <div className="border border-terminal-green/30 p-4">
-          <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">CURRENCY</h3>
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center p-2 bg-yellow-900/20 border border-yellow-600/30 rounded">
-              <div className="text-2xl font-bold text-yellow-500">{currencies?.gold ?? 0}</div>
-              <div className="text-xs text-yellow-600/80 uppercase">Gold</div>
-            </div>
-            <div className="text-center p-2 bg-gray-500/20 border border-gray-400/30 rounded">
-              <div className="text-2xl font-bold text-gray-300">{currencies?.silver ?? 0}</div>
-              <div className="text-xs text-gray-400/80 uppercase">Silver</div>
-            </div>
-            <div className="text-center p-2 bg-orange-900/20 border border-orange-700/30 rounded">
-              <div className="text-2xl font-bold text-orange-400">{currencies?.copper ?? 0}</div>
-              <div className="text-xs text-orange-600/80 uppercase">Copper</div>
-            </div>
-          </div>
-          {(currencies?.platinum !== undefined && currencies.platinum > 0) && (
-            <div className="mt-3 text-center p-2 bg-blue-900/20 border border-blue-400/30 rounded">
-              <span className="text-blue-300 font-bold">{currencies.platinum}</span>
-              <span className="text-xs text-blue-400/80 uppercase ml-2">Platinum</span>
-            </div>
-          )}
-        </div>
-
-        {/* Equipment */}
-        <div className="border border-terminal-green/30 p-4">
-          <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">EQUIPMENT</h3>
-          <div className="space-y-4">
-            <div>
-              <div className="text-xs text-terminal-green/60 uppercase tracking-wider mb-1">Armor</div>
-              <div className="text-lg">{activeCharacter.equipment?.armor || 'None'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-terminal-green/60 uppercase tracking-wider mb-1">Weapons</div>
-              {activeCharacter.equipment?.weapons && activeCharacter.equipment.weapons.length > 0 ? (
-                <ul className="list-disc list-inside">
-                  {activeCharacter.equipment.weapons.map((w, i) => (
-                    <li key={i} className="text-lg">{w}</li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="text-lg text-terminal-green/40">None</div>
+                <div className="text-center p-2 bg-gray-500/20 border border-gray-400/30 rounded">
+                  <div className="text-2xl font-bold text-gray-300">{currencies?.silver ?? 0}</div>
+                  <div className="text-xs text-gray-400/80 uppercase">Silver</div>
+                </div>
+                <div className="text-center p-2 bg-orange-900/20 border border-orange-700/30 rounded">
+                  <div className="text-2xl font-bold text-orange-400">{currencies?.copper ?? 0}</div>
+                  <div className="text-xs text-orange-600/80 uppercase">Copper</div>
+                </div>
+              </div>
+              {(currencies?.platinum !== undefined && currencies.platinum > 0) && (
+                <div className="mt-3 text-center p-2 bg-blue-900/20 border border-blue-400/30 rounded">
+                  <span className="text-blue-300 font-bold">{currencies.platinum}</span>
+                  <span className="text-xs text-blue-400/80 uppercase ml-2">Platinum</span>
+                </div>
               )}
             </div>
-            {equippedItems.length > 0 && (
-              <div>
-                <div className="text-xs text-terminal-green/60 uppercase tracking-wider mb-1">Equipped Items</div>
-                <ul className="list-disc list-inside space-y-1 text-terminal-green">
-                  {equippedItems.map((item) => (
-                    <li key={item.id}>
-                      <span className="font-semibold">{item.name}</span>
-                      {item.type ? <span className="text-terminal-green/60"> ({item.type})</span> : null}
-                    </li>
-                  ))}
-                </ul>
+
+            {/* Equipment */}
+            <div className="border border-terminal-green/30 p-4">
+              <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">EQUIPMENT</h3>
+              <div className="space-y-4">
+                <div>
+                  <div className="text-xs text-terminal-green/60 uppercase tracking-wider mb-1">Armor</div>
+                  <div className="text-lg">{activeCharacter.equipment?.armor || 'None'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-terminal-green/60 uppercase tracking-wider mb-1">Weapons</div>
+                  {activeCharacter.equipment?.weapons && activeCharacter.equipment.weapons.length > 0 ? (
+                    <ul className="list-disc list-inside">
+                      {activeCharacter.equipment.weapons.map((w, i) => (
+                        <li key={i} className="text-lg">{w}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-lg text-terminal-green/40">None</div>
+                  )}
+                </div>
+                {equippedItems.length > 0 && (
+                  <div>
+                    <div className="text-xs text-terminal-green/60 uppercase tracking-wider mb-1">Equipped Items</div>
+                    <ul className="list-disc list-inside space-y-1 text-terminal-green">
+                      {equippedItems.map((item) => (
+                        <li key={item.id}>
+                          <span className="font-semibold">{item.name}</span>
+                          {item.type ? <span className="text-terminal-green/60"> ({item.type})</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Inventory List */}
+          <div className="border border-terminal-green/30 p-4">
+            <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">INVENTORY</h3>
+            {inventory.length === 0 ? (
+              <div className="text-terminal-green/60">No items carried.</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {stowedItems.map((item) => (
+                  <div key={item.id} className="border border-terminal-green/20 p-2 bg-terminal-green/5">
+                    <div className="font-semibold">{item.name}</div>
+                    <div className="text-xs text-terminal-green/60">
+                      {item.type || 'misc'} • {item.weight ?? '?'} lbs
+                    </div>
+                    {item.description ? (
+                      <div className="text-xs text-terminal-green/70 mt-1 line-clamp-3">{item.description}</div>
+                    ) : null}
+                  </div>
+                ))}
               </div>
             )}
           </div>
+        </>
+      ) : viewTab === 'spells' ? (
+        <div className="h-full">
+          <SpellBookView
+            characterId={activeCharacter.id || ''}
+            spellSlots={activeCharacter.spellSlots as any} 
+            pactMagicSlots={activeCharacter.pactMagicSlots as any}
+            knownSpells={activeCharacter.knownSpells}
+            preparedSpells={activeCharacter.preparedSpells}
+            cantripsKnown={activeCharacter.cantripsKnown}
+            spellSaveDC={activeCharacter.spellSaveDC}
+            spellAttackBonus={activeCharacter.spellAttackBonus}
+            spellcastingAbility={activeCharacter.spellcastingAbility}
+          />
         </div>
-      </div>
-
-      {/* Inventory List */}
-      <div className="border border-terminal-green/30 p-4">
-        <h3 className="text-lg font-bold border-b border-terminal-green/30 pb-2 mb-4">INVENTORY</h3>
-        {inventory.length === 0 ? (
-          <div className="text-terminal-green/60">No items carried.</div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {stowedItems.map((item) => (
-              <div key={item.id} className="border border-terminal-green/20 p-2 bg-terminal-green/5">
-                <div className="font-semibold">{item.name}</div>
-                <div className="text-xs text-terminal-green/60">
-                  {item.type || 'misc'} • {item.weight ?? '?'} lbs
-                </div>
-                {item.description ? (
-                  <div className="text-xs text-terminal-green/70 mt-1 line-clamp-3">{item.description}</div>
-                ) : null}
-              </div>
-            ))}
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-black/40 border border-terminal-green/30 p-4 rounded-lg">
+            <h3 className="text-xl font-bold text-terminal-green-bright mb-4 border-b border-terminal-green/30 pb-2">
+              ACTIVE EFFECTS
+            </h3>
+            <p className="text-terminal-green/60 text-sm mb-4">
+              Detailed tracking of boons, curses, and magical transformations affecting your character.
+            </p>
+            
+            {activeCharacter.customEffects && activeCharacter.customEffects.length > 0 ? (
+               <CustomEffectsDisplay effects={activeCharacter.customEffects} />
+            ) : (
+               <div className="text-center py-8 text-terminal-green/40 italic">
+                 No active custom effects.
+               </div>
+            )}
+            
+            <div className="mt-4 pt-4 border-t border-terminal-green/20 text-right">
+              <button
+                onClick={() => syncState(true)}
+                className="text-xs border border-terminal-green px-3 py-1 text-terminal-green hover:bg-terminal-green/10 transition-colors"
+              >
+                Refresh Effects
+              </button>
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
 
       {/* Delete Confirmation Modal */}

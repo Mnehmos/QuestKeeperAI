@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { usePartyStore, PartyMemberWithCharacter, MemberRole } from '../../stores/partyStore';
 import { useGameStateStore } from '../../stores/gameStateStore';
 import { ConfirmModal } from '../common/ConfirmModal';
+import { ConditionList } from '../common/ConditionBadge'; // Import ConditionList
 
 interface PartyPanelProps {
   onAddMember?: () => void;
@@ -190,6 +191,11 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
               <div className="text-xs text-terminal-green/60">
                 Lv{character.level} {character.race ? `${character.race} ` : ''}{character.class}
               </div>
+              {character.conditions && character.conditions.length > 0 && (
+                <div className="mt-1">
+                  <ConditionList conditions={character.conditions} size="sm" limit={2} />
+                </div>
+              )}
             </div>
 
             {/* HP Bar */}

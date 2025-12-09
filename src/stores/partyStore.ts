@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { parseMcpResponse, debounce } from '../utils/mcpUtils';
+import type { CharacterCondition } from './gameStateStore'; // Type-only import to avoid cycles
 
 // ============================================
 // Types
@@ -47,6 +48,29 @@ export interface PartyMember {
   notes?: string;
 }
 
+export interface SpellSlot {
+  current: number;
+  max: number;
+}
+
+export interface SpellSlots {
+  level1: SpellSlot;
+  level2: SpellSlot;
+  level3: SpellSlot;
+  level4: SpellSlot;
+  level5: SpellSlot;
+  level6: SpellSlot;
+  level7: SpellSlot;
+  level8: SpellSlot;
+  level9: SpellSlot;
+}
+
+export interface PactMagicSlots {
+  current: number;
+  max: number;
+  slotLevel: number;
+}
+
 export interface CharacterSummary {
   id: string;
   name: string;
@@ -57,6 +81,16 @@ export interface CharacterSummary {
   maxHp: number;
   ac?: number;
   characterType: CharacterType;
+  conditions?: CharacterCondition[];
+  // Spellcasting
+  spellSlots?: SpellSlots;
+  pactMagicSlots?: PactMagicSlots;
+  knownSpells?: string[];
+  preparedSpells?: string[];
+  cantripsKnown?: string[];
+  spellcastingAbility?: string;
+  spellSaveDC?: number;
+  spellAttackBonus?: number;
 }
 
 export interface PartyMemberWithCharacter extends PartyMember {
@@ -100,6 +134,17 @@ export interface CharacterUpdates {
     wis?: number;
     cha?: number;
   };
+  // Spellcasting
+  spellSlots?: SpellSlots;
+  pactMagicSlots?: PactMagicSlots;
+  knownSpells?: string[];
+  preparedSpells?: string[];
+  cantripsKnown?: string[];
+  spellcastingAbility?: string;
+  // Conditions
+  conditions?: CharacterCondition[];
+  addConditions?: CharacterCondition[];
+  removeConditions?: string[];
 }
 
 // ============================================
@@ -198,6 +243,24 @@ function parseParty(data: any): Party | null {
 function parseCharacterSummary(data: any): CharacterSummary | null {
   if (!data || !data.id) return null;
 
+  // content may be deeply nested depending on API return
+  
+  // Parse conditions
+  const conditions: CharacterCondition[] = [];
+  if (Array.isArray(data.conditions)) {
+    data.conditions.forEach((c: any) => {
+      if (typeof c === 'string') {
+        conditions.push({ name: c });
+      } else if (c && c.name) {
+        conditions.push({
+          name: c.name,
+          duration: c.duration,
+          source: c.source
+        });
+      }
+    });
+  }
+
   return {
     id: data.id,
     name: data.name || 'Unknown',
@@ -208,6 +271,16 @@ function parseCharacterSummary(data: any): CharacterSummary | null {
     maxHp: data.maxHp || data.max_hp || data.hp || 1,
     ac: data.ac || data.armorClass,
     characterType: data.characterType || data.character_type || 'pc',
+    conditions,
+    // Spellcasting
+    spellSlots: data.spellSlots,
+    pactMagicSlots: data.pactMagicSlots,
+    knownSpells: data.knownSpells,
+    preparedSpells: data.preparedSpells,
+    cantripsKnown: data.cantripsKnown,
+    spellcastingAbility: data.spellcastingAbility,
+    spellSaveDC: data.spellSaveDC,
+    spellAttackBonus: data.spellAttackBonus,
   };
 }
 
