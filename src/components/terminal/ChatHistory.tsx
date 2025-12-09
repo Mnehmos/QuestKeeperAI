@@ -283,6 +283,20 @@ export const ChatHistory: React.FC = () => {
             <p className="text-terminal-green/70 max-w-md">
               Tell the Dungeon Master what you'd like to do. Describe your character's actions, ask questions, or begin your quest!
             </p>
+            <div className="flex justify-center gap-6 pt-2">
+              <div className="flex items-center gap-2">
+                <code className="px-2 py-0.5 bg-terminal-amber/10 border border-terminal-amber/30 rounded text-terminal-amber font-bold text-xs">/new</code>
+                <span className="text-terminal-green/60 text-xs uppercase tracking-wider">New</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="px-2 py-0.5 bg-terminal-amber/10 border border-terminal-amber/30 rounded text-terminal-amber font-bold text-xs">/start</code>
+                <span className="text-terminal-green/60 text-xs uppercase tracking-wider">Resume</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="px-2 py-0.5 bg-terminal-amber/10 border border-terminal-amber/30 rounded text-terminal-amber font-bold text-xs">/help</code>
+                <span className="text-terminal-green/60 text-xs uppercase tracking-wider">Help</span>
+              </div>
+            </div>
           </div>
           <div className="bg-terminal-black/50 border border-terminal-green/20 rounded-lg p-4 max-w-lg">
             <p className="text-terminal-amber text-sm">{currentTip}</p>

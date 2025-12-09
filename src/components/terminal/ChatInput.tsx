@@ -101,6 +101,35 @@ export const ChatInput: React.FC = () => {
     }
   }, [prefillInput, setPrefillInput]);
 
+  // Command Hints Rotation
+  const COMMAND_HINTS = [
+    "ENTER_COMMAND... (Shift+Enter for new line)",
+    "Type /new to start a new campaign",
+    "Type /start to resume your last session",
+    "Type /help for a list of commands",
+    "Type /roll 1d20+5 to roll dice",
+    "Type /inventory to check your gear",
+    "Describe your action: 'I search the room...'"
+  ];
+
+  const [hintIndex, setHintIndex] = useState(0);
+
+  useEffect(() => {
+    // Only rotate if input is empty
+    if (input.trim() !== '') return;
+
+    const interval = setInterval(() => {
+      setHintIndex((prev) => (prev + 1) % COMMAND_HINTS.length);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [input]);
+  
+  // Calculate placeholder text
+  const placeholderText = isLoading 
+    ? "PROCESSING..." 
+    : (input.trim() === '' ? COMMAND_HINTS[hintIndex] : "ENTER_COMMAND... (Shift+Enter for new line)");
+
   // Reusable LLM Submission function
   const submitToLLM = useCallback(async (injectedPrompt?: string) => {
     setIsLoading(true);
@@ -150,77 +179,30 @@ export const ChatInput: React.FC = () => {
         history.unshift({ role: 'system', content: systemPrompt });
       }
 
-      // Inject active selection context
+      // Inject dynamic narrative context via backend tool
       try {
         const { useGameStateStore } = await import('../../stores/gameStateStore');
+        const { useCombatStore } = await import('../../stores/combatStore');
+        
         const gameState = useGameStateStore.getState();
-        const activeChar = gameState.activeCharacter;
-        const activeWorldId = gameState.activeWorldId;
-        const activeWorld = (gameState.worlds || []).find((w: any) => w.id === activeWorldId);
+        const combatState = useCombatStore.getState();
 
-        const selectionContext = [
-          'Use the UI-selected character and world as defaults; do NOT ask for IDs if not necessary.',
-          activeChar
-            ? `Active character: ${activeChar.name} (id: ${activeChar.id || 'unknown'}), level ${activeChar.level}, class ${activeChar.class}, HP ${activeChar.hp.current}/${activeChar.hp.max}, AC ${activeChar.stats?.dex ? 10 + Math.floor((activeChar.stats.dex - 10) / 2) : 'n/a'}.`
-            : 'No active character selected.',
-          activeWorld
-            ? `Active world: ${activeWorld.name} (id: ${activeWorld.id || 'unknown'}, size: ${activeWorld.width}x${activeWorld.height}).`
-            : 'No active world selected.',
-          'If the user asks for inventory/quests/status, default to the active character unless they explicitly name another.'
-        ].join('\n');
+        // Only fetch context if we have at least a world or character
+        if (gameState.activeWorldId || gameState.activeCharacter) {
+            const contextResult = await mcpManager.gameStateClient.callTool('get_narrative_context', {
+                worldId: gameState.activeWorldId || 'unknown',
+                characterId: gameState.activeCharacter?.id,
+                encounterId: combatState.activeEncounterId || undefined,
+                maxEvents: 5
+            });
 
-        history.unshift({ role: 'system', content: selectionContext });
-
-        // Inject world environment context
-        const worldEnv = activeWorld?.environment || gameState.world?.environment || {};
-        if (worldEnv && Object.keys(worldEnv).length > 0) {
-          const envContext = [
-            '--- CURRENT ENVIRONMENT ---',
-            worldEnv.date ? `Date: ${typeof worldEnv.date === 'object' ? worldEnv.date.full_date : worldEnv.date}` : null,
-            worldEnv.time_of_day || worldEnv.timeOfDay ? `Time of Day: ${worldEnv.time_of_day || worldEnv.timeOfDay}` : null,
-            worldEnv.season ? `Season: ${typeof worldEnv.season === 'object' ? worldEnv.season.current : worldEnv.season}` : null,
-            worldEnv.weather || worldEnv.weatherConditions ? `Weather: ${typeof worldEnv.weather === 'object' ? worldEnv.weather.condition : (worldEnv.weather || worldEnv.weatherConditions)}` : null,
-            worldEnv.temperature ? `Temperature: ${typeof worldEnv.temperature === 'object' ? worldEnv.temperature.current : worldEnv.temperature}` : null,
-            worldEnv.lighting ? `Lighting: ${typeof worldEnv.lighting === 'object' ? worldEnv.lighting.overall : worldEnv.lighting}` : null,
-            worldEnv.moon_phase || worldEnv.moonPhase ? `Moon Phase: ${typeof (worldEnv.moon_phase || worldEnv.moonPhase) === 'object' ? (worldEnv.moon_phase || worldEnv.moonPhase).phase : (worldEnv.moon_phase || worldEnv.moonPhase)}` : null,
-            'Use this environment data when describing scenes or when the player asks about weather/time/conditions.'
-          ].filter(Boolean).join('\n');
-
-          history.unshift({ role: 'system', content: envContext });
-        }
-
-        // Inject secrets context
-        if (activeWorldId) {
-          try {
-            const secretsResult = await mcpManager.gameStateClient.callTool('get_secrets_for_context', { worldId: activeWorldId });
-            const secretsText = secretsResult?.content?.[0]?.text || '{}';
-            let secrets;
-            try {
-              secrets = JSON.parse(secretsText);
-            } catch {
-              secrets = null;
+            const contextText = contextResult?.content?.[0]?.text;
+            if (contextText) {
+                history.unshift({ role: 'system', content: contextText });
             }
-
-            if (secrets && Object.keys(secrets).length > 0) {
-              const secretsContext = [
-                '--- SECRET KEEPER: GM-ONLY KNOWLEDGE ---',
-                'The following secrets are HIDDEN from the player. Use them to guide the narrative but NEVER reveal them directly.',
-                'Only hint at secrets when dramatically appropriate. Use spoiler tags for any reveals.',
-                '',
-                JSON.stringify(secrets, null, 2),
-                '',
-                'Remember: These secrets enhance the story. Drop hints, create tension, but protect the mystery.',
-                '--- END SECRETS ---'
-              ].join('\n');
-
-              history.unshift({ role: 'system', content: secretsContext });
-            }
-          } catch (secretsErr) {
-            console.warn('[ChatInput] Failed to fetch secrets for context:', secretsErr);
-          }
         }
       } catch (err) {
-        console.warn('[ChatInput] Failed to inject selection context into system prompt:', err);
+        console.warn('[ChatInput] Failed to inject narrative context:', err);
       }
 
       // Inject extra prompt if provided (e.g. for initialization)
@@ -998,7 +980,7 @@ export const ChatInput: React.FC = () => {
               }
             }}
             disabled={isLoading}
-            placeholder={isLoading ? "PROCESSING..." : "ENTER_COMMAND... (Shift+Enter for new line)"}
+            placeholder={placeholderText}
             className="flex-grow bg-transparent focus:outline-none text-terminal-green placeholder-terminal-green/30 font-mono disabled:opacity-50 resize-none min-h-[24px] max-h-[200px]"
             rows={1}
             style={{ height: 'auto', overflow: 'hidden' }}
