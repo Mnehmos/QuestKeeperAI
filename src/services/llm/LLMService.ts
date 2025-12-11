@@ -7,6 +7,7 @@ import { ChatMessage, LLMProviderInterface, LLMResponse } from './types';
 import { parseMcpResponse } from '../../utils/mcpUtils';
 import { formatCombatToolResponse } from '../../utils/toolResponseFormatter';
 import { tools, getLocalTools, executeLocalTool } from '../toolRegistry';
+import { buildSystemPrompt, ContextOptions } from './contextBuilder';
 
 // Combat tools from rpg-mcp that should trigger combat state sync
 const COMBAT_TOOLS = new Set([
@@ -44,6 +45,10 @@ class LLMService {
     private toolCache: any[] | null = null;
     private toolCacheTime: number = 0;
     private readonly TOOL_CACHE_TTL = 60000; // 1 minute cache
+
+    // Seven-Layer Context Architecture: System prompt cache
+    private contextCache: { prompt: string; timestamp: number; options: ContextOptions } | null = null;
+    private readonly CONTEXT_CACHE_TTL = 30000; // 30 seconds cache
 
     constructor() {
         this.providers = {
@@ -283,7 +288,13 @@ class LLMService {
 
         console.log(`[LLMService] ${allTools.length} tools available`);
 
-        let currentHistory = [...history];
+        // Build system prompt from Seven-Layer Context Architecture
+        const systemPrompt = await this.getSystemPrompt();
+        
+        // Prepend system message to history and trim to budget
+        let currentHistory = this.trimHistory(
+            this.ensureSystemMessage(history, systemPrompt)
+        );
         let finalContent = '';
 
         // Max 25 turns to allow extensive tool usage while preventing infinite loops
@@ -324,9 +335,19 @@ class LLMService {
                     ? formatCombatToolResponse(toolCall.name, result)
                     : null;
 
+                // Truncate large tool responses to prevent context overflow
+                // UI already has full response via callbacks
+                const MAX_TOOL_RESPONSE_TOKENS = 2000; // ~8000 chars
+                let responseContent = formattedResult || JSON.stringify(result);
+                if (responseContent.length > MAX_TOOL_RESPONSE_TOKENS * 4) {
+                    responseContent = responseContent.slice(0, MAX_TOOL_RESPONSE_TOKENS * 4) 
+                        + '\n\n[...response truncated for context budget. Full data was processed by the engine.]';
+                    console.log(`[LLMService] Truncated tool response for ${toolCall.name}: ${formattedResult?.length || 0} → ${responseContent.length} chars`);
+                }
+
                 currentHistory.push({
                     role: 'tool',
-                    content: formattedResult || JSON.stringify(result),
+                    content: responseContent,
                     toolCallId
                 } as any);
             }
@@ -368,7 +389,13 @@ class LLMService {
                 allTools = [];
             }
 
-            let currentHistory = [...history];
+            // Build system prompt from Seven-Layer Context Architecture
+            const systemPrompt = await this.getSystemPrompt();
+            
+            // Prepend system message to history and trim to budget
+            let currentHistory = this.trimHistory(
+                this.ensureSystemMessage(history, systemPrompt)
+            );
             let turnCount = 0;
             let continueLoop = true;
 
@@ -443,9 +470,19 @@ class LLMService {
                                         ? formatCombatToolResponse(toolCall.name, result)
                                         : null;
 
+                                    // Truncate large tool responses to prevent context overflow
+                                    // UI already has full response via callbacks
+                                    const MAX_TOOL_RESPONSE_TOKENS = 2000; // ~8000 chars
+                                    let responseContent = formattedResult || JSON.stringify(result);
+                                    if (responseContent.length > MAX_TOOL_RESPONSE_TOKENS * 4) {
+                                        responseContent = responseContent.slice(0, MAX_TOOL_RESPONSE_TOKENS * 4) 
+                                            + '\n\n[...response truncated for context budget. Full data was processed by the engine.]';
+                                        console.log(`[LLMService] Truncated tool response for ${toolCall.name}: ${formattedResult?.length || 0} → ${responseContent.length} chars`);
+                                    }
+
                                     currentHistory.push({
                                         role: 'tool',
-                                        content: formattedResult || JSON.stringify(result),
+                                        content: responseContent,
                                         toolCallId: toolCall.id
                                     } as any);
                                 }
@@ -483,6 +520,181 @@ class LLMService {
             console.error('[LLMService] Streaming error:', error);
             callbacks.onError(error.message || 'Streaming failed');
         }
+    }
+
+    // =========================================================================
+    // SEVEN-LAYER CONTEXT ARCHITECTURE
+    // =========================================================================
+
+    /**
+     * Get the current context options from active stores
+     */
+    private async getContextOptions(): Promise<ContextOptions | null> {
+        try {
+            const { useGameStateStore } = await import('../../stores/gameStateStore');
+            const { usePartyStore } = await import('../../stores/partyStore');
+            const { useCombatStore } = await import('../../stores/combatStore');
+
+            const gameState = useGameStateStore.getState();
+            const partyState = usePartyStore.getState();
+            const combatState = useCombatStore.getState();
+
+            // Need at least a world ID to build context
+            const worldId = gameState.activeWorldId;
+            if (!worldId) {
+                console.log('[LLMService] No active world - skipping system prompt');
+                return null;
+            }
+
+            return {
+                worldId,
+                characterId: gameState.activeCharacterId || undefined,
+                partyId: partyState.activePartyId || undefined,
+                encounterId: combatState.activeEncounterId || undefined,
+                activeNpcId: undefined, // Could be derived from chat context
+                verbosity: 'standard'
+            };
+        } catch (e) {
+            console.warn('[LLMService] Failed to get context options:', e);
+            return null;
+        }
+    }
+
+    /**
+     * Build/cache the system prompt from the Seven-Layer Context Architecture
+     */
+    private async getSystemPrompt(): Promise<string> {
+        const now = Date.now();
+        const options = await this.getContextOptions();
+
+        if (!options) {
+            return ''; // No context available
+        }
+
+        // Check cache validity
+        if (
+            this.contextCache &&
+            (now - this.contextCache.timestamp) < this.CONTEXT_CACHE_TTL &&
+            this.contextCache.options.worldId === options.worldId &&
+            this.contextCache.options.characterId === options.characterId &&
+            this.contextCache.options.encounterId === options.encounterId
+        ) {
+            console.log('[LLMService] Using cached system prompt');
+            return this.contextCache.prompt;
+        }
+
+        // Build fresh context
+        console.log('[LLMService] Building fresh system prompt...');
+        const prompt = await buildSystemPrompt(options);
+
+        // Cache it
+        this.contextCache = {
+            prompt,
+            timestamp: now,
+            options
+        };
+
+        return prompt;
+    }
+
+    /**
+     * Ensure the message history has a system message at the start
+     */
+    private ensureSystemMessage(history: ChatMessage[], systemPrompt: string): ChatMessage[] {
+        if (!systemPrompt) {
+            return [...history];
+        }
+
+        // Check if first message is already a system message
+        if (history.length > 0 && history[0].role === 'system') {
+            // Replace with our dynamic system prompt
+            return [
+                { role: 'system', content: systemPrompt },
+                ...history.slice(1)
+            ];
+        }
+
+        // Prepend system message
+        return [
+            { role: 'system', content: systemPrompt },
+            ...history
+        ];
+    }
+
+    /**
+     * Estimate token count (rough: ~4 chars per token)
+     */
+    private estimateTokens(text: string): number {
+        return Math.ceil(text.length / 4);
+    }
+
+    /**
+     * Trim history to stay under token budget
+     * Preserves system message, removes oldest messages first
+     */
+    private trimHistory(history: ChatMessage[], maxTokens: number = 100000): ChatMessage[] {
+        // Calculate current token usage
+        let totalTokens = 0;
+        const tokenCounts: number[] = [];
+        
+        for (const msg of history) {
+            const content = typeof msg.content === 'string' 
+                ? msg.content 
+                : JSON.stringify(msg.content);
+            const tokens = this.estimateTokens(content);
+            tokenCounts.push(tokens);
+            totalTokens += tokens;
+        }
+        
+        // If under budget, return as-is
+        if (totalTokens <= maxTokens) {
+            console.log(`[LLMService] History within budget: ~${totalTokens} tokens`);
+            return history;
+        }
+        
+        console.warn(`[LLMService] History exceeds budget: ~${totalTokens} tokens > ${maxTokens}. Trimming...`);
+        
+        // Keep system message if present
+        const hasSystem = history.length > 0 && history[0].role === 'system';
+        const systemMsg = hasSystem ? [history[0]] : [];
+        const systemTokens = hasSystem ? tokenCounts[0] : 0;
+        
+        // Trim from the start (oldest), keeping most recent messages
+        let remainingBudget = maxTokens - systemTokens;
+        const trimmedNonSystem: ChatMessage[] = [];
+        
+        // Walk backwards from end to preserve recent context
+        for (let i = history.length - 1; i >= (hasSystem ? 1 : 0); i--) {
+            if (tokenCounts[i] <= remainingBudget) {
+                trimmedNonSystem.unshift(history[i]);
+                remainingBudget -= tokenCounts[i];
+            } else {
+                // If a single message is too large, truncate its content
+                const msg = history[i];
+                const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+                const truncatedContent = content.slice(0, remainingBudget * 4) + '\n\n[...truncated due to token limit]';
+                trimmedNonSystem.unshift({ ...msg, content: truncatedContent });
+                break;
+            }
+        }
+        
+        const result = [...systemMsg, ...trimmedNonSystem];
+        const newTotal = result.reduce((sum, msg) => {
+            const c = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+            return sum + this.estimateTokens(c);
+        }, 0);
+        
+        console.log(`[LLMService] Trimmed history: ~${totalTokens} → ~${newTotal} tokens (removed ${history.length - result.length} messages)`);
+        
+        return result;
+    }
+
+    /**
+     * Force refresh the context cache (call after significant game events)
+     */
+    public invalidateContextCache(): void {
+        this.contextCache = null;
+        console.log('[LLMService] Context cache invalidated');
     }
 }
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useHudStore } from '../../stores/hudStore';
 import { useCombatStore } from '../../stores/combatStore';
+import { mcpManager } from '../../services/mcpClient';
 
 /**
  * Bottom action bar for map visualization tools.
@@ -15,6 +16,37 @@ export const QuickActionBar: React.FC = () => {
     const measureMode = useCombatStore(s => s.measureMode);
     const setShowLineOfSight = useCombatStore(s => s.setShowLineOfSight);
     const setMeasureMode = useCombatStore(s => s.setMeasureMode);
+    const activeEncounterId = useCombatStore(s => s.activeEncounterId);
+
+    // Clear scene handler
+    const clearCombat = useCombatStore(s => s.clearCombat);
+    
+    const handleClearScene = () => {
+        if (window.confirm('Clear the local scene? Visuals will be reset, but will re-sync with active encounter.')) {
+            clearCombat(true);
+        }
+    };
+
+    // End encounter handler - calls backend and clears local state
+    const handleEndEncounter = async () => {
+        if (!activeEncounterId) {
+            alert('No active encounter to end.');
+            return;
+        }
+        
+        if (window.confirm('End this encounter? This will finalize combat and clear the battlefield.')) {
+            try {
+                await mcpManager.gameStateClient.callTool('end_encounter', { 
+                    encounterId: activeEncounterId 
+                });
+                clearCombat(false); // Full clear including encounter ID
+                console.log('[QuickActionBar] Encounter ended:', activeEncounterId);
+            } catch (e) {
+                console.error('[QuickActionBar] Failed to end encounter:', e);
+                alert('Failed to end encounter. Check console for details.');
+            }
+        }
+    };
 
     return (
         <div className="flex gap-2 p-2 bg-terminal-dim/95 rounded-sm border border-terminal-green-dim shadow-2xl animate-fade-in-up">
@@ -39,6 +71,17 @@ export const QuickActionBar: React.FC = () => {
                 icon="📏" 
                 onClick={() => setMeasureMode(!measureMode)}
                 active={measureMode}
+            />
+            <ActionButton 
+                label="Clear Scene" 
+                icon="🗑️" 
+                onClick={handleClearScene}
+            />
+            <ActionButton 
+                label="End Combat" 
+                icon="⚔️" 
+                onClick={handleEndEncounter}
+                disabled={!activeEncounterId}
             />
         </div>
     );

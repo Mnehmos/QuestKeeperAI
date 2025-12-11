@@ -115,6 +115,7 @@ export const SettingsView: React.FC = () => {
                                             <option value="qwen/qwen3-coder:free">Qwen3 Coder (Free)</option>
                                         </optgroup>
                                         <optgroup label="Premium">
+                                            <option value="anthropic/claude-opus-4.5">Claude Opus 4.5</option>
                                             <option value="anthropic/claude-haiku-4.5">Claude Haiku 4.5</option>
                                             <option value="anthropic/claude-sonnet-4.5">Claude Sonnet 4.5</option>
                                             <option value="openai/gpt-5.1">GPT-5.1</option>

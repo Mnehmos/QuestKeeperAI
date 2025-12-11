@@ -333,6 +333,34 @@ export const ChatInput: React.FC = () => {
         uiStore.openSessionManager();
         return { content: `📂 **Session Manager opened.** Select a campaign to switch or manage.` };
       }
+
+      case 'resume': {
+        // Trigger "Previously on..." narrative using Seven-Layer Context
+        const worldId = gameState.activeWorldId;
+        const charId = gameState.activeCharacter?.id;
+        
+        if (!worldId || !charId) {
+          return { content: `⚠️ **No active session to resume.**\n\nUse \`/start\` to begin or resume a campaign.`, type: 'error' };
+        }
+        
+        try {
+          const { buildSessionResumePrompt } = await import('../../services/llm/contextBuilder');
+          const resumePrompt = await buildSessionResumePrompt(worldId, charId);
+          
+          if (!resumePrompt) {
+            return { content: `📖 **No session history found.** This appears to be a new campaign. Just start playing!` };
+          }
+          
+          // Submit to LLM with the resume prompt
+          setTimeout(() => {
+            submitToLLM(resumePrompt);
+          }, 100);
+          
+          return { content: `📖 **Generating session recap...**\n\n*The DM is preparing your "Previously on..." summary.*` };
+        } catch (error: any) {
+          return { content: `Error generating resume: ${error.message}`, type: 'error' };
+        }
+      }
   
       case 'help': {
         return {
@@ -344,6 +372,7 @@ export const ChatInput: React.FC = () => {
   | \`/start\` | Resume last session or create new campaign |
   | \`/new\` | Create a new campaign with setup wizard |
   | \`/session\` | Open session manager to switch campaigns |
+  | \`/resume\` | Trigger "Previously on..." recap from DM |
   
   ### 📡 System
   | Command | Description |
