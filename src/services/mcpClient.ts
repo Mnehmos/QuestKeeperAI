@@ -120,7 +120,7 @@ export class McpClient {
     private async logToFile(message: string) {
         try {
             const { appDataDir } = await import('@tauri-apps/api/path');
-            const { exists, mkdir, writeTextFile, readTextFile } = await import('@tauri-apps/plugin-fs');
+            const { writeTextFile, readTextFile } = await import('@tauri-apps/plugin-fs');
             
             const dir = await appDataDir();
             const logPath = `${dir}/mcp-debug.log`;

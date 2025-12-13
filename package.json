@@ -1,6 +1,6 @@
 {
   "name": "questkeeperai-v2",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "module",
   "scripts": {
     "dev": "npm run prepare:mcp && vite",
