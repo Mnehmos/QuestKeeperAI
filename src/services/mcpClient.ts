@@ -76,6 +76,7 @@ export class McpClient {
             console.log(`[McpClient] Spawning sidecar: ${this.serverName}`);
             const command = Command.sidecar(`binaries/${this.serverName}`);
 
+            command.on('close', (data) => {
                 console.log(`[McpClient] ${this.serverName} closed with code ${data.code}`);
                 this.logToFile(`${this.serverName} closed with code ${data.code}`);
                 this.cleanup();
