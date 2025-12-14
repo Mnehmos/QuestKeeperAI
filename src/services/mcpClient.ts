@@ -73,46 +73,128 @@ export class McpClient {
         }
 
         try {
-            console.log(`[McpClient] Spawning sidecar: ${this.serverName}`);
-            const command = Command.sidecar(`binaries/${this.serverName}`);
+            console.log(`[McpClient] Spawning MCP server: ${this.serverName}`);
+            
+            // Prepare CWD (AppData) to ensure server can write database/logs
+            let cwd = '';
+            try {
+                const { appDataDir } = await import('@tauri-apps/api/path');
+                const { mkdir } = await import('@tauri-apps/plugin-fs');
+                cwd = await appDataDir();
+                // Ensure directory exists
+                try {
+                    await mkdir(cwd, { recursive: true });
+                } catch (e) { /* ignore if exists */ }
+                
+                console.log(`[McpClient] Setting CWD to: ${cwd}`);
 
-            command.on('close', (data) => {
-                console.log(`[McpClient] ${this.serverName} closed with code ${data.code}`);
-                this.logToFile(`${this.serverName} closed with code ${data.code}`);
-                this.cleanup();
-            });
-
-            command.on('error', (error) => {
-                console.error(`[McpClient] ${this.serverName} error: "${error}"`);
-            });
-
-            command.stdout.on('data', (line) => {
-                this.handleOutput(line);
-            });
-
-            command.stderr.on('data', (line) => {
-                // Only log non-routine stderr
-                if (!line.includes('[SQLite]') && !line.includes('running on stdio')) {
-                    console.warn(`[McpClient] ${this.serverName} stderr: ${line}`);
-                    
-                    eventBus.emit('warn:log', {
-                        message: line,
-                        source: `McpClient:${this.serverName}`,
-                        timestamp: Date.now()
-                    });
-                    this.logToFile(`STDERR: ${line}`);
-                } else {
-                    console.log(`[McpClient] ${this.serverName}: ${line}`);
+                // Copy better_sqlite3.node to CWD (Critical for pkg binaries)
+                try {
+                    const { resolveResource } = await import('@tauri-apps/api/path');
+                    const { copyFile } = await import('@tauri-apps/plugin-fs');
+                    const resourcePath = await resolveResource('binaries/better_sqlite3.node');
+                    console.log(`[McpClient] Found native module at: ${resourcePath}`);
+                    const destPath = `${cwd}/better_sqlite3.node`;
+                    await copyFile(resourcePath, destPath);
+                    console.log(`[McpClient] Copied native module to CWD`);
+                } catch (e) {
+                    console.warn('[McpClient] Failed to copy native module:', e);
+                    await this.logToFile(`Failed to copy native module: ${e}`);
                 }
-            });
 
-            this.process = await command.spawn();
-            this._isConnected = true;
-            console.log(`[McpClient] ${this.serverName} spawned. PID: ${this.process.pid}`);
+            } catch (e) {
+                console.warn('[McpClient] Failed to setup CWD:', e);
+            }
+
+            // Helper to set up command listeners
+            const setupCommandListeners = (cmd: ReturnType<typeof Command.sidecar>) => {
+                cmd.on('close', (data) => {
+                    console.log(`[McpClient] ${this.serverName} closed with code ${data.code}`);
+                    this.logToFile(`${this.serverName} closed with code ${data.code}`);
+                    this.cleanup();
+                });
+
+                cmd.on('error', (error) => {
+                    console.error(`[McpClient] ${this.serverName} error: "${error}"`);
+                });
+
+                cmd.stdout.on('data', (line) => {
+                    this.handleOutput(line);
+                });
+
+                cmd.stderr.on('data', (line) => {
+                    if (!line.includes('[SQLite]') && !line.includes('running on stdio')) {
+                        console.warn(`[McpClient] ${this.serverName} stderr: ${line}`);
+                        eventBus.emit('warn:log', {
+                            message: line,
+                            source: `McpClient:${this.serverName}`,
+                            timestamp: Date.now()
+                        });
+                        this.logToFile(`STDERR: ${line}`);
+                    } else {
+                        console.log(`[McpClient] ${this.serverName}: ${line}`);
+                    }
+                });
+            };
+
+            const spawnOptions = cwd ? { cwd } : undefined;
+
+            // Strategy 1: Try sidecar (Standard Dev Mode)
+            try {
+                await this.logToFile(`[Connect] Attempting Strategy 1: Sidecar`);
+                console.log(`[McpClient] Strategy 1: Sidecar (${this.serverName})`);
+                // Note: Command.sidecar args are 2nd param, options are 3rd. sidecar takes no args.
+                const sidecarCmd = Command.sidecar(this.serverName, [], spawnOptions);
+                setupCommandListeners(sidecarCmd);
+                this.process = await sidecarCmd.spawn();
+                this._isConnected = true;
+                await this.logToFile(`[Connect] Strategy 1 SUCCESS. PID: ${this.process.pid}`);
+                console.log(`[McpClient] Sidecar spawned successfully. PID: ${this.process.pid}`);
+                return;
+            } catch (sidecarError) {
+                console.warn(`[McpClient] Strategy 1 failed: ${sidecarError}`);
+                await this.logToFile(`Strategy 1 (Sidecar) failed: ${sidecarError}`);
+            }
+
+            // Strategy 2: Direct Execution (Production Fallback)
+            try {
+                await this.logToFile(`[Connect] Attempting Strategy 2: Direct Execution`);
+                console.log(`[McpClient] Strategy 2: Direct Execution (rpg-mcp-server-direct)`);
+                // Command.create(program, args, options)
+                const directCmd = Command.create('rpg-mcp-server-direct', [], spawnOptions);
+                setupCommandListeners(directCmd);
+                this.process = await directCmd.spawn();
+                this._isConnected = true;
+                await this.logToFile(`[Connect] Strategy 2 SUCCESS. PID: ${this.process.pid}`);
+                console.log(`[McpClient] Direct exe spawned successfully. PID: ${this.process.pid}`);
+                return;
+
+            } catch (directError) {
+                console.warn(`[McpClient] Strategy 2 failed: ${directError}`);
+                await this.logToFile(`Strategy 2 (Direct) failed: ${directError}`);
+            }
+
+             // Strategy 3: CMD wrapper (Last Resort)
+             try {
+                await this.logToFile(`[Connect] Attempting Strategy 3: CMD Wrapper`);
+                console.log(`[McpClient] Strategy 3: CMD Wrapper`);
+                // For CMD, we set CWD to the app data dir so 'cd /d' isn't needed, likely
+                const cmdCmd = Command.create('run-cmd', ['/c', 'rpg-mcp-server.exe'], spawnOptions);
+                setupCommandListeners(cmdCmd);
+                this.process = await cmdCmd.spawn();
+                this._isConnected = true;
+                await this.logToFile(`[Connect] Strategy 3 SUCCESS. PID: ${this.process.pid}`);
+                console.log(`[McpClient] CMD wrapper spawned successfully. PID: ${this.process.pid}`);
+                return;
+             } catch (cmdError) {
+                 console.error(`[McpClient] Strategy 3 failed: ${cmdError}`);
+                 await this.logToFile(`Strategy 3 (CMD) failed: ${cmdError}`);
+                 throw cmdError; // Rethrow last error
+             }
 
         } catch (error) {
-            console.error(`[McpClient] Failed to spawn ${this.serverName}:`, error);
-            await this.logToFile(`Failed to spawn: ${error}`);
+            console.error(`[McpClient] All spawn strategies failed for ${this.serverName}:`, error);
+            await this.logToFile(`FATAL: All strategies failed: ${error}`);
             throw error;
         }
     }
@@ -120,9 +202,18 @@ export class McpClient {
     private async logToFile(message: string) {
         try {
             const { appDataDir } = await import('@tauri-apps/api/path');
-            const { writeTextFile, readTextFile } = await import('@tauri-apps/plugin-fs');
+            const { mkdir, writeTextFile, readTextFile } = await import('@tauri-apps/plugin-fs');
             
             const dir = await appDataDir();
+            
+            // Ensure directory exists
+            try {
+                await mkdir(dir, { recursive: true });
+            } catch (e) {
+                // Ignore if exists, or verify with exists() check if preferred
+                // But mkdir recursive usually succeeds if dir exists
+            }
+
             const logPath = `${dir}/mcp-debug.log`;
             
             // Simple append simulation

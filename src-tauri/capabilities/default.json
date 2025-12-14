@@ -13,13 +13,26 @@
       "identifier": "shell:allow-spawn",
       "allow": [
         {
-          "name": "binaries/rpg-mcp-server",
+          "name": "rpg-mcp-server",
           "sidecar": true
+        },
+        {
+          "name": "rpg-mcp-server-direct",
+          "cmd": "rpg-mcp-server.exe",
+          "args": true
+        },
+        {
+          "name": "run-cmd",
+          "cmd": "cmd.exe",
+          "args": true
         }
       ]
     },
     "shell:default",
     "shell:allow-stdin-write",
-    "fs:default"
+    "fs:default",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-resource-read-recursive"
   ]
 }

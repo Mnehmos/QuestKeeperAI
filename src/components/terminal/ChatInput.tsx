@@ -291,15 +291,15 @@ export const ChatInput: React.FC = () => {
       // === SESSION MANAGEMENT COMMANDS ===
       case 'new': {
         // Launch the Campaign Setup Wizard
-        return new Promise((resolve) => {
-          uiStore.openCampaignWizard((sessionId, initialPrompt) => {
-            // After wizard completes, trigger the LLM with the initial prompt
-            setTimeout(() => {
-              submitToLLM(initialPrompt);
-            }, 100);
-            resolve({ content: `🎭 **New Campaign Started!** Session ID: \`${sessionId}\`\n\nGenerating opening scene...` });
-          });
+        // Don't use Promise - just open wizard and return immediately
+        // The wizard handles its own completion flow
+        uiStore.openCampaignWizard((_sessionId, initialPrompt) => {
+          // After wizard completes, trigger the LLM with the initial prompt
+          setTimeout(() => {
+            submitToLLM(initialPrompt);
+          }, 100);
         });
+        return { content: `🎭 Opening Campaign Setup Wizard...` };
       }
       
       case 'start': {
@@ -317,15 +317,13 @@ export const ChatInput: React.FC = () => {
             content: `🎮 **Resuming Campaign:** ${lastSession.name}\n\n📍 ${lastSession.snapshot.locationName}\n👥 ${lastSession.snapshot.partyName} (Lvl ${lastSession.snapshot.level})\n\nType anything to continue your adventure!`
           };
         } else {
-          // No sessions exist - launch wizard
-          return new Promise((resolve) => {
-            uiStore.openCampaignWizard((_sessionId, initialPrompt) => {
-              setTimeout(() => {
-                submitToLLM(initialPrompt);
-              }, 100);
-              resolve({ content: `🎭 **New Campaign Created!**\n\nGenerating opening scene...` });
-            });
+          // No sessions exist - launch wizard (don't use Promise to avoid hanging)
+          uiStore.openCampaignWizard((_sessionId, initialPrompt) => {
+            setTimeout(() => {
+              submitToLLM(initialPrompt);
+            }, 100);
           });
+          return { content: `🎭 No existing campaigns. Opening setup wizard...` };
         }
       }
       

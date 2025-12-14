@@ -25,11 +25,10 @@
     "active": true,
     "targets": "all",
     "externalBin": [
-      "binaries/rpg-mcp-server"
+      "rpg-mcp-server"
     ],
     "resources": [
-      "binaries/better_sqlite3.node"
-
+      "better_sqlite3.node"
     ],
     "icon": [
       "icons/32x32.png",
