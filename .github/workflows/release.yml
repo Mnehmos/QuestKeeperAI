@@ -42,7 +42,7 @@ jobs:
 
       - name: Verify native module exists
         run: |
-          if (!(Test-Path "src-tauri/binaries/better_sqlite3.node")) {
+          if (!(Test-Path "src-tauri/better_sqlite3.node")) {
             Write-Error "better_sqlite3.node not found!"
             exit 1
           }
