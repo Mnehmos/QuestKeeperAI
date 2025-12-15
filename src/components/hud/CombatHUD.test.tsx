@@ -135,8 +135,8 @@ describe('PartyStatusBar', () => {
   it('renders party members', () => {
     render(<PartyStatusBar />);
     
-    expect(screen.getByText('Gandalf')).toBeInTheDocument();
-    expect(screen.getByText('Frodo')).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('Gandalf') ?? false)[0]).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('Frodo') ?? false)[0]).toBeInTheDocument();
   });
 
   it('shows Party header', () => {
@@ -148,8 +148,8 @@ describe('PartyStatusBar', () => {
   it('displays HP values for each member', () => {
     render(<PartyStatusBar />);
     
-    expect(screen.getByText(/HP 80\/100/)).toBeInTheDocument();
-    expect(screen.getByText(/HP 25\/30/)).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('HP 80/100') ?? false)[0]).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('HP 25/30') ?? false)[0]).toBeInTheDocument();
   });
 
   it('displays AC values for each member', () => {
@@ -171,10 +171,10 @@ describe('QuickActionBar', () => {
   it('renders action buttons', () => {
     render(<QuickActionBar />);
     
-    expect(screen.getByText('Inventory')).toBeInTheDocument();
-    expect(screen.getByText('Melee Attack')).toBeInTheDocument();
-    expect(screen.getByText('Cast Spell')).toBeInTheDocument();
-    expect(screen.getByText('End Turn')).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('Inventory') ?? false)[0]).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('Melee Attack') ?? false)[0]).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('Cast Spell') ?? false)[0]).toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent?.includes('End Turn') ?? false)[0]).toBeInTheDocument();
   });
 
   it('renders action icons', () => {
@@ -189,7 +189,7 @@ describe('QuickActionBar', () => {
   it('inventory button is clickable', () => {
     render(<QuickActionBar />);
     
-    const inventoryButton = screen.getByText('Inventory').closest('button');
+    const inventoryButton = screen.getAllByText((_, node) => node?.textContent?.includes('Inventory') ?? false)[0].closest('button');
     expect(inventoryButton).not.toBeNull();
     fireEvent.click(inventoryButton!);
     
@@ -214,7 +214,7 @@ describe('User Interaction Flows', () => {
       render(<TurnOrderBar />);
       
       // The current turn (Gandalf) should be visually distinct
-      const gandalfElement = screen.getByText('Gandalf').closest('div');
+      const gandalfElement = screen.getAllByText((_, node) => node?.textContent?.includes('Gandalf') ?? false)[0].closest('div');
       expect(gandalfElement).toHaveClass('bg-indigo-600');
     });
 
@@ -231,15 +231,15 @@ describe('User Interaction Flows', () => {
       render(<PartyStatusBar />);
       
       // Both party members should be visible with HP
-      expect(screen.getByText(/HP 80\/100/)).toBeInTheDocument();
-      expect(screen.getByText(/HP 25\/30/)).toBeInTheDocument();
+      expect(screen.getAllByText((_, node) => node?.textContent?.includes('HP 80/100') ?? false)[0]).toBeInTheDocument();
+      expect(screen.getAllByText((_, node) => node?.textContent?.includes('HP 25/30') ?? false)[0]).toBeInTheDocument();
     });
 
     it('low HP member should have red HP bar', () => {
       // This would require CSS class checking or visual regression
       // For now, just verify the HP is displayed
       render(<PartyStatusBar />);
-      expect(screen.getByText(/HP 25\/30/)).toBeInTheDocument();
+      expect(screen.getAllByText((_, node) => node?.textContent?.includes('HP 25/30') ?? false)[0]).toBeInTheDocument();
     });
   });
 
@@ -248,10 +248,10 @@ describe('User Interaction Flows', () => {
       render(<QuickActionBar />);
       
       // All common actions should be accessible
-      const inventoryBtn = screen.getByText('Inventory').closest('button');
-      const attackBtn = screen.getByText('Melee Attack').closest('button');
-      const spellBtn = screen.getByText('Cast Spell').closest('button');
-      const endTurnBtn = screen.getByText('End Turn').closest('button');
+      const inventoryBtn = screen.getAllByText((_, node) => node?.textContent?.includes('Inventory') ?? false)[0].closest('button');
+      const attackBtn = screen.getAllByText((_, node) => node?.textContent?.includes('Melee Attack') ?? false)[0].closest('button');
+      const spellBtn = screen.getAllByText((_, node) => node?.textContent?.includes('Cast Spell') ?? false)[0].closest('button');
+      const endTurnBtn = screen.getAllByText((_, node) => node?.textContent?.includes('End Turn') ?? false)[0].closest('button');
       
       expect(inventoryBtn).toBeEnabled();
       expect(attackBtn).toBeEnabled();
