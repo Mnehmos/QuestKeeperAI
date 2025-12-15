@@ -34,7 +34,7 @@ jobs:
 
       - name: Verify sidecar binary exists
         run: |
-          if (!(Test-Path "src-tauri/binaries/rpg-mcp-server-x86_64-pc-windows-msvc.exe")) {
+          if (!(Test-Path "src-tauri/rpg-mcp-server-x86_64-pc-windows-msvc.exe")) {
             Write-Error "MCP server binary not found! Ensure it is committed to the repository."
             exit 1
           }
