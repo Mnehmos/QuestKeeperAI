@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { CreatureSize, findNearestOpenTile, getElevationAt } from '../utils/gridHelpers';
 import { mcpManager } from '../services/mcpClient';
 import { useGameStateStore } from './gameStateStore';
-import { useChatStore } from './chatStore';
-import { parseMcpResponse, debounce } from '../utils/mcpUtils';
+
+import { parseMcpResponse, debounce, extractEmbeddedStateJson } from '../utils/mcpUtils';
 
 export type Vector3 = { x: number; y: number; z: number };
 
@@ -89,6 +89,7 @@ export interface Aura {
  */
 interface EncounterStateJson {
   encounterId: string;
+  sessionId?: string; // New: Sync session ID from server
   round: number;
   currentTurnIndex: number;
   currentTurn: {
@@ -153,6 +154,7 @@ interface CombatState {
   
   // rpg-mcp encounter tracking
   activeEncounterId: string | null;
+  activeEncounterSessionId: string | null; // Track session ID for sync
   currentRound: number;
   currentTurnName: string | null;
   turnOrder: string[];
@@ -197,23 +199,6 @@ interface CombatState {
 }
 
 const MOCK_ENTITIES: Entity[] = [];
-
-/**
- * Extract embedded JSON from tool response text
- * Looks for <!-- STATE_JSON ... STATE_JSON --> markers
- */
-function extractEmbeddedStateJson(text: string): EncounterStateJson | null {
-  const match = text.match(/<!-- STATE_JSON\n([\s\S]*?)\nSTATE_JSON -->/);
-  if (match && match[1]) {
-    try {
-      return JSON.parse(match[1]);
-    } catch (e) {
-      console.warn('[extractEmbeddedStateJson] Failed to parse embedded JSON:', e);
-      return null;
-    }
-  }
-  return null;
-}
 
 /**
  * Determine entity type and color based on isEnemy flag and name
@@ -588,6 +573,7 @@ export const useCombatStore = create<CombatState>((set, get) => ({
   
   // rpg-mcp encounter tracking
   activeEncounterId: null,
+  activeEncounterSessionId: null,
   currentRound: 0,
   currentTurnName: null,
   turnOrder: [],
@@ -670,6 +656,7 @@ export const useCombatStore = create<CombatState>((set, get) => ({
       entities,
       terrain: terrainToUse,
       activeEncounterId: stateJson.encounterId,
+      activeEncounterSessionId: stateJson.sessionId || null,
       currentRound: stateJson.round,
       currentTurnName: stateJson.currentTurn?.name || null,
       turnOrder: stateJson.turnOrder,
@@ -689,16 +676,28 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     console.log('[updateFromStateJson] Combat participants:', stateJson.participants.map(p => ({ name: p.name, id: p.id, hp: p.hp })));
     
     const updatedParty = gameState.party.map(char => {
-      // Find matching participant by name or ID
-      const participant = stateJson.participants.find(
-        p => p.name === char.name || p.id === char.id
+    // Find matching participant - try multiple matching strategies
+    // 1. First try ID match (most reliable)
+    let participant = stateJson.participants.find(p => p.id === char.id);
+    
+    // 2. Try exact name match
+    if (!participant) {
+      participant = stateJson.participants.find(p => p.name === char.name);
+    }
+    
+    // 3. Try partial name match (handles "Pyrus" vs "Pyrus the Flamecaller")
+    if (!participant && char.name) {
+      participant = stateJson.participants.find(p => 
+        p.name.includes(char.name) || char.name.includes(p.name)
       );
-      if (participant && participant.hp !== char.hp.current) {
-        console.log('[updateFromStateJson] Syncing HP for', char.name, ':', char.hp.current, '->', participant.hp);
-        return { ...char, hp: { ...char.hp, current: participant.hp } };
-      }
-      return char;
-    });
+    }
+    
+    if (participant && participant.hp !== char.hp.current) {
+      console.log('[updateFromStateJson] Syncing HP for', char.name, ':', char.hp.current, '->', participant.hp);
+      return { ...char, hp: { ...char.hp, current: participant.hp } };
+    }
+    return char;
+  });
     
     // Only update if there were changes
     if (updatedParty.some((char, i) => char.hp.current !== gameState.party[i]?.hp.current)) {
@@ -738,8 +737,11 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     try {
       console.log('[syncCombatState] Fetching encounter state for:', activeEncounterId);
       
+      const { activeEncounterSessionId } = get();
+      
       const result = await mcpManager.combatClient.callTool('get_encounter_state', {
-        encounterId: activeEncounterId
+        encounterId: activeEncounterId,
+        sessionId: activeEncounterSessionId || 'default-session' // Use stored session ID or fallback
       });
 
       console.log('[syncCombatState] Raw result:', result);
@@ -753,9 +755,8 @@ export const useCombatStore = create<CombatState>((set, get) => ({
         // Use the new updateFromStateJson method
         get().updateFromStateJson(data);
 
-        // Check if we need to auto-skip the current turn (if dead)
-        // We do this AFTER updating state so we know who is currently up
-        setTimeout(() => get().checkAutoSkipTurn(), 100);
+        // NOTE: Dead creature skipping is handled by backend's nextTurnWithConditions()
+        // No frontend auto-skip needed
 
       } else if (typeof data === 'string') {
         // Fallback: check if it's text with embedded JSON
@@ -819,61 +820,10 @@ export const useCombatStore = create<CombatState>((set, get) => ({
   setCursorPosition: (pos) => set({ cursorPosition: pos }),
   
   checkAutoSkipTurn: async () => {
-    const { activeEncounterId, currentTurnName, entities, consecutiveSkips, syncCombatState } = get();
-
-    if (!activeEncounterId || !currentTurnName) return;
-
-    const currentEntity = entities.find(e => e.name === currentTurnName);
-    if (!currentEntity) return;
-
-    // Check if dead (HP <= 0)
-    // Note: Some systems allow negative HP, but typically 0 is downed/dead in 5e for most tools here.
-    const hp = currentEntity.metadata.hp.current;
-    
-    if (hp <= 0) {
-        console.log(`[checkAutoSkipTurn] ${currentTurnName} is dead (HP ${hp}). Auto-skipping.`);
-        
-        if (consecutiveSkips >= 10) {
-            console.warn('[checkAutoSkipTurn] Infinite loop protection triggered. Stopping auto-skip.');
-            useChatStore.getState().addMessage({
-                id: Date.now().toString(),
-                sender: 'system',
-                content: `⚠️ Auto-skip stopped: Too many consecutive skips (>10). Please check combat state.`,
-                timestamp: Date.now(),
-                type: 'error'
-            });
-            // Reset to avoid getting stuck forever if manual intervention happens
-             set({ consecutiveSkips: 0 });
-            return;
-        }
-
-        // Increment skips
-        set({ consecutiveSkips: consecutiveSkips + 1 });
-
-        // Notify user
-        useChatStore.getState().addMessage({
-            id: Date.now().toString(),
-            sender: 'system',
-            content: `💀 ${currentTurnName} is incapacitated. Skipping turn...`,
-            timestamp: Date.now(),
-            type: 'info'
-        });
-
-        // Trigger next turn
-        try {
-             await mcpManager.combatClient.callTool('next_turn', { encounterId: activeEncounterId });
-             // Force immediate sync to process next turn
-             await syncCombatState(true);
-        } catch (e) {
-            console.error('Failed to auto-skip turn', e);
-        }
-
-    } else {
-        // Reset skips if we found a living entity
-        if (consecutiveSkips > 0) {
-             set({ consecutiveSkips: 0 });
-        }
-    }
+    // Backend now handles skipping dead participants in nextTurnWithConditions()
+    // This function is disabled to prevent double-skipping and infinite loops
+    console.log('[checkAutoSkipTurn] Disabled - backend handles dead creature skipping');
+    return;
   },
 
   // Aura management
