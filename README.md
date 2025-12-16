@@ -29,6 +29,9 @@ Quest Keeper AI is a desktop RPG companion that combines an **AI Dungeon Master*
 - **Theme Selector** - Multiple UI themes (terminal, fantasy, modern)
 
 ---
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/6fb01f76-fb36-4cd9-a902-cb83763a40d1" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/7aaf98aa-d5fd-4604-9cad-895c83130dab" />
+
 
 ## Core Documentation
 
