@@ -9,7 +9,7 @@
  */
 
 // Debug logging flag - set to true only during development
-const DEBUG_MCP_PARSING = false;
+const DEBUG_MCP_PARSING = true;
 
 /**
  * Extract data from MCP tool response

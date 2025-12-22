@@ -13,16 +13,19 @@ import { buildSystemPrompt, ContextOptions } from './contextBuilder';
 const COMBAT_TOOLS = new Set([
     // rpg-mcp combat tools
     'create_encounter',
-    'get_encounter_state', 
+    'get_encounter_state',
     'execute_combat_action',
     'advance_turn',
     'end_encounter',
     'load_encounter',
+    'generate_terrain_pattern',
+    'render_battlefield',
+    'render_map',
     // Legacy tool names (for backward compatibility)
-    'place_creature', 
-    'move_creature', 
-    'initialize_battlefield', 
-    'batch_place_creatures', 
+    'place_creature',
+    'move_creature',
+    'initialize_battlefield',
+    'batch_place_creatures',
     'batch_move_creatures'
 ]);
 
@@ -178,6 +181,24 @@ class LLMService {
      * Parse tool result and extract important data (like encounter IDs)
      */
     private async parseToolResult(toolName: string, result: any): Promise<void> {
+        // CRIT-004: Parse embedded state JSON from ALL combat tool responses
+        // This ensures terrain and other state updates are immediately reflected
+        if (COMBAT_TOOLS.has(toolName)) {
+            try {
+                const data = parseMcpResponse<any>(result, null);
+                if (typeof data === 'string') {
+                    const embedded = extractEmbeddedStateJson(data);
+                    if (embedded && embedded.encounterId) {
+                        console.log(`[LLMService] Found embedded state JSON in ${toolName} response, updating combat store`);
+                        const { useCombatStore } = await import('../../stores/combatStore');
+                        useCombatStore.getState().updateFromStateJson(embedded);
+                    }
+                }
+            } catch (e) {
+                console.warn(`[LLMService] Failed to parse embedded JSON from ${toolName}:`, e);
+            }
+        }
+
         // Handle both standard and tactical encounter creation
         if (toolName === 'create_encounter' || toolName === 'setup_tactical_encounter') {
             try {
